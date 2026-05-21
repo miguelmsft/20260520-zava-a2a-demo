@@ -41,7 +41,7 @@
 param location string = resourceGroup().location
 
 @description('User-Assigned Managed Identity name for the LangGraph Ops Agent pod.')
-param uamiName string = 'id-ops-agent'
+param uamiName string = 'id-zava-a2a-ops-agent'
 
 @description('AKS OIDC issuer URL — bind the federated credential to this issuer. Pass aks.outputs.oidcIssuerUrl from main.bicep.')
 param aksOidcIssuerUrl string

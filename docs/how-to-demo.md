@@ -75,7 +75,7 @@ Approximately **$15 – $25 per day** while the environment is deployed. The dom
 **Cleanup at the end is mandatory** (section 8). A forgotten environment will accrue tens of dollars per day silently.
 
 ```powershell
-az group delete --name rg-zava-demo --yes --no-wait
+az group delete --name rg-zava-a2a-smart-order-demo --yes --no-wait
 ```
 
 See [`docs/architecture.md`](./architecture.md) (“Cost model” section) for the full per-component breakdown and for guidance on the hardened / private-VNet variant covered in [`docs/private-vnet-considerations.md`](./private-vnet-considerations.md).
@@ -118,9 +118,9 @@ Interpret the output:
 ```powershell
 $pfxPwd = Read-Host -AsSecureString -Prompt "PFX password"
 ./scripts/deploy-infra.ps1 `
-  -ResourceGroupName rg-zava-demo `
+  -ResourceGroupName rg-zava-a2a-smart-order-demo `
   -Location eastus2 `
-  -DnsZoneName zava.example.com `
+  -DnsZoneName zava-a2a-smart-order.example.com `
   -CertificatePfxPath ./tls-cert.pfx `
   -CertificatePfxPassword $pfxPwd
 ```
@@ -288,7 +288,7 @@ Reference: [`docs/architecture.md`](./architecture.md) for the deployed componen
 | `BadRequestError: api-version query parameter is not allowed when using /v1 path` | Foundry V2 GA rejects this param on `/openai/v1/...` | Unset `FOUNDRY_OPENAI_API_VERSION` in your env. The shipped code defaults to empty; see [`docs/deployment-learnings.md`](./deployment-learnings.md) §2.1. |
 | `invalid_payload: Model must match the agent's model 'gpt-55-orchestrator'` | `responses.create(model=...)` was passed the agent name instead of the bound deployment | Set `FOUNDRY_ORCHESTRATOR_DEPLOYMENT=gpt-55-orchestrator` (or whatever the deployment is called). See [`docs/deployment-learnings.md`](./deployment-learnings.md) §2.3. |
 | `invalid_payload: required: Required properties ["type"] are not present` on `/agent_reference` | GA requires `type: "agent_reference"` alongside `name` | Update your call site; the shipped backend and `test_agent.py` already include it. |
-| AKS health probes/ingress unreachable after a day idle | AKS auto-stopped | `az aks start --name aks-zava-demo --resource-group rg-zava-demo` then `kubectl rollout restart deployment/ops-agent`. See [`docs/deployment-learnings.md`](./deployment-learnings.md) §5.5. |
+| AKS health probes/ingress unreachable after a day idle | AKS auto-stopped | `az aks start --name aks-zava-a2a-smart-order --resource-group rg-zava-a2a-smart-order-demo` then `kubectl rollout restart deployment/ops-agent`. See [`docs/deployment-learnings.md`](./deployment-learnings.md) §5.5. |
 | `429 Too Many Requests` during a second demo run | Default 10K TPM is too low for repeated runs | Scale both deployments to capacity 50 via `az cognitiveservices account deployment create --sku-capacity 50` (idempotent upsert). See [`docs/deployment-learnings.md`](./deployment-learnings.md) §5.4. |
 | `AttributeError: 'ConnectionsOperations' object has no attribute 'create'` | Data-plane SDK gap; `connections.create` does not exist | Use ARM REST PUT instead — `create_a2a_connection.py` now does this automatically. See [`docs/deployment-learnings.md`](./deployment-learnings.md) §3. |
 
@@ -299,7 +299,7 @@ Reference: [`docs/architecture.md`](./architecture.md) for the deployed componen
 When you’re finished — even if “just for the day” — tear down the Azure resources:
 
 ```powershell
-az group delete --name rg-zava-demo --yes --no-wait
+az group delete --name rg-zava-a2a-smart-order-demo --yes --no-wait
 ```
 
 This removes AKS, the Foundry account and project (including the agent and A2A connection), ACR, Key Vault (soft-deleted; purge separately if you want the name back immediately), DNS zone, Log Analytics, App Insights, and all role assignments scoped to the group.

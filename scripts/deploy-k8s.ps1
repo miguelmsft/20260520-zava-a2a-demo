@@ -45,7 +45,7 @@
 
 .PARAMETER AcrLoginServer
     REQUIRED. Fully-qualified ACR login server (e.g.,
-    `acrzavademoabc123.azurecr.io`). Source: deploy-infra.ps1 summary.
+    `acrzavaa2asmartorderabc123.azurecr.io`). Source: deploy-infra.ps1 summary.
 
 .PARAMETER KvName
     REQUIRED. Key Vault resource name (without the URI). Source:
@@ -62,13 +62,13 @@
 
 .PARAMETER FoundryEndpoint
     REQUIRED. Foundry project endpoint, e.g.,
-    `https://zava-foundry.services.ai.azure.com/api/projects/zava-project`.
+    `https://foundry-zava-a2a-smartorder.services.ai.azure.com/api/projects/smart-order-feasibility`.
     Source: deploy-infra.ps1 summary ("Foundry project endpoint"). Used as
     FOUNDRY_PROJECT_ENDPOINT inside the pod (for future AIProjectClient use).
 
 .PARAMETER FoundryAccountEndpoint
     Optional. Foundry account inference endpoint (Azure OpenAI-compatible base
-    URL), e.g., `https://zava-foundry.services.ai.azure.com`. Source:
+    URL), e.g., `https://foundry-zava-a2a-smartorder.services.ai.azure.com`. Source:
     deploy-infra.ps1 summary ("Foundry account inference endpoint"). Used as
     AZURE_OPENAI_ENDPOINT inside the pod by `langchain_openai.AzureChatOpenAI`.
     If omitted, the script derives it by stripping the `/api/projects/...`
@@ -98,11 +98,11 @@
 
 .EXAMPLE
     ./scripts/deploy-k8s.ps1 `
-        -AcrLoginServer acrzavademoabc123.azurecr.io `
-        -KvName kv-zava-abc123 `
-        -DnsZone zava-demo.example.com `
+        -AcrLoginServer acrzavaa2asmartorderabc123.azurecr.io `
+        -KvName kv-zava-a2aabc123 `
+        -DnsZone zava-a2a-smart-order.example.com `
         -UamiClientId 11111111-2222-3333-4444-555555555555 `
-        -FoundryEndpoint https://zava-foundry.services.ai.azure.com/api/projects/zava-project `
+        -FoundryEndpoint https://foundry-zava-a2a-smartorder.services.ai.azure.com/api/projects/smart-order-feasibility `
         -WorkerDeploymentName gpt-54mini-worker
 
 .NOTES

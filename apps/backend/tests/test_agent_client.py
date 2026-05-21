@@ -266,6 +266,100 @@ def test_classify_chart_image() -> None:
     assert evt.data["mime_type"] == "image/png"
 
 
+def test_classify_container_file_citation_emits_chart_with_proxy_url() -> None:
+    """Annotation events with container_file_citation produce a chart event."""
+
+    from app.artifacts import artifact_allowlist
+
+    artifact_allowlist.clear()
+
+    annotation = _Obj(
+        type="container_file_citation",
+        container_id="cntr_abc123",
+        file_id="cfile_def456",
+        filename="feasibility_zp7000.png",
+        start_index=10,
+        end_index=42,
+    )
+    evt = _classify_event(
+        _Obj(type="response.output_text.annotation.added", annotation=annotation)
+    )
+    assert evt.type == "chart"
+    assert evt.data["mime_type"] == "image/png"
+    assert evt.data["container_id"] == "cntr_abc123"
+    assert evt.data["file_id"] == "cfile_def456"
+    assert evt.data["filename"] == "feasibility_zp7000.png"
+    assert evt.data["url"] == "/api/files/cntr_abc123/cfile_def456"
+    # Side-effect: the pair gets allowlisted so the file endpoint can serve it.
+    assert artifact_allowlist.is_allowed("cntr_abc123", "cfile_def456")
+
+
+def test_classify_container_file_citation_non_image_skipped() -> None:
+    """A citation for a non-image file should NOT emit a chart event."""
+
+    from app.artifacts import artifact_allowlist
+
+    artifact_allowlist.clear()
+
+    annotation = _Obj(
+        type="container_file_citation",
+        container_id="cntr_abc123",
+        file_id="cfile_csv999",
+        filename="report.csv",
+        start_index=0,
+        end_index=5,
+    )
+    evt = _classify_event(
+        _Obj(type="response.output_text.annotation.added", annotation=annotation)
+    )
+    assert evt.type == "status"
+    # And the allowlist must not be polluted.
+    assert not artifact_allowlist.is_allowed("cntr_abc123", "cfile_csv999")
+
+
+def test_classify_container_file_citation_rejects_malformed_ids() -> None:
+    """IDs that don't match the strict prefix regex must be rejected."""
+
+    from app.artifacts import artifact_allowlist
+
+    artifact_allowlist.clear()
+
+    annotation = _Obj(
+        type="container_file_citation",
+        container_id="../etc/passwd",
+        file_id="cfile_xxx",
+        filename="evil.png",
+        start_index=0,
+        end_index=5,
+    )
+    evt = _classify_event(
+        _Obj(type="response.output_text.annotation.added", annotation=annotation)
+    )
+    # Malformed IDs fall through to the status branch.
+    assert evt.type == "status"
+    assert not artifact_allowlist.is_allowed("../etc/passwd", "cfile_xxx")
+
+
+def test_classify_message_done_with_sandbox_text_no_longer_emits_chart() -> None:
+    """The legacy sandbox-text fallback must NOT emit a broken chart event.
+
+    Foundry GA delivers the real chart via the annotation event handled
+    above; the sandbox markdown in the message text is decorative only and
+    is stripped on the frontend.
+    """
+
+    text_part = _Obj(
+        type="output_text",
+        text="Result is ready.\n![chart](sandbox:/mnt/data/feasibility.png)",
+    )
+    item = _Obj(type="message", content=[text_part])
+    evt = _classify_event(_Obj(type="response.output_item.done", item=item))
+    # Should NOT be a chart event — should fall through to the generic
+    # status fallback at the bottom of the item-handling branch.
+    assert evt.type == "status"
+    assert evt.data["item_type"] == "message"
+
+
 def test_classify_done() -> None:
     evt = _classify_event(_Obj(type="response.completed"))
     assert evt.type == "done"

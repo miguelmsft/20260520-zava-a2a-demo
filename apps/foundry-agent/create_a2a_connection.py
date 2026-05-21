@@ -176,7 +176,7 @@ def _attempt_sdk_fallback(
 def _parse_account_from_endpoint(project_endpoint: str) -> tuple[Optional[str], Optional[str]]:
     """Extract (account_name, project_name) from a Foundry project endpoint.
 
-    Accepts e.g. ``https://foundry-zava-demo.services.ai.azure.com/api/projects/zava-project``.
+    Accepts e.g. ``https://foundry-zava-a2a-smartorder.services.ai.azure.com/api/projects/smart-order-feasibility``.
     """
     # Account name = first dotted segment of the host
     host_match = re.match(r"https?://([^.]+)\.services\.ai\.azure\.com", project_endpoint)

@@ -42,6 +42,7 @@ from typing import Any, AsyncGenerator
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
 
+from .artifacts import artifact_allowlist
 from .config import settings
 from .models import AgentEvent, ChatRequest
 
@@ -271,6 +272,50 @@ def _classify_event(event: Any) -> AgentEvent:
         delta = _safe_getattr(event, "delta", default="") or ""
         return AgentEvent(type="text_delta", data={"text": delta})
 
+    # ---- Container-file citation annotation ---------------------------
+    # Code Interpreter outputs (PNG charts, etc.) are emitted as a
+    # ``response.output_text.annotation.added`` event whose ``annotation``
+    # field is a ``container_file_citation`` carrying the (container_id,
+    # file_id, filename) triple. We turn that into a ``chart`` event
+    # pointing at our /api/files proxy so the React frontend can render
+    # the image inline.
+    if event_type == "response.output_text.annotation.added":
+        annotation = _safe_getattr(event, "annotation", default=None)
+        ann_type = _safe_getattr(annotation, "type", default="") or ""
+        if ann_type == "container_file_citation":
+            container_id = _safe_getattr(annotation, "container_id", default="") or ""
+            file_id = _safe_getattr(annotation, "file_id", default="") or ""
+            filename = _safe_getattr(annotation, "filename", default="") or ""
+            ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+            if ext in {"png", "jpg", "jpeg", "webp", "gif"} and artifact_allowlist.register(
+                container_id, file_id
+            ):
+                mime_type = {
+                    "png": "image/png",
+                    "jpg": "image/jpeg",
+                    "jpeg": "image/jpeg",
+                    "webp": "image/webp",
+                    "gif": "image/gif",
+                }[ext]
+                return AgentEvent(
+                    type="chart",
+                    data={
+                        "mime_type": mime_type,
+                        "file_id": file_id,
+                        "container_id": container_id,
+                        "filename": filename,
+                        "url": f"/api/files/{container_id}/{file_id}",
+                    },
+                )
+        # Non-image or malformed citation — surface as status for debugging.
+        return AgentEvent(
+            type="status",
+            data={
+                "event": event_type,
+                "annotation_type": ann_type or "unknown",
+            },
+        )
+
     # ---- Output items (tool calls, A2A hops, file artifacts) ----------
     # Both ``response.output_item.added`` and ``...done`` carry an ``item``
     # whose ``type`` distinguishes the sub-kind.
@@ -356,35 +401,13 @@ def _classify_event(event: Any) -> AgentEvent:
                 },
             )
 
-        # Final assistant message — Foundry GA's Code Interpreter typically
-        # embeds the chart as a ``sandbox:/mnt/data/...png`` markdown
-        # reference inside the message text rather than emitting a separate
-        # ``image_file`` output item. Detect that and surface it as a chart
-        # event so the React frontend can render a placeholder.
-        if item_type == "message" and event_type.endswith("done"):
-            content = _safe_getattr(item, "content", default=None)
-            text_blob = ""
-            if isinstance(content, list):
-                for part in content:
-                    part_text = _safe_getattr(part, "text", default=None)
-                    if isinstance(part_text, str):
-                        text_blob += part_text + "\n"
-            elif isinstance(content, str):
-                text_blob = content
-            if text_blob and (
-                "sandbox:" in text_blob
-                or ".png" in text_blob.lower()
-                or ".jpg" in text_blob.lower()
-            ):
-                return AgentEvent(
-                    type="chart",
-                    data={
-                        "mime_type": "image/png",
-                        "file_id": "",
-                        "url": None,
-                        "sandbox_reference": True,
-                    },
-                )
+        # Final assistant message — Foundry GA's Code Interpreter embeds
+        # the chart as a ``sandbox:/mnt/data/...png`` markdown reference in
+        # the message text, but the actual chart is delivered via a parallel
+        # ``response.output_text.annotation.added`` event (handled above).
+        # The sandbox reference itself is **not browser-fetchable**, so we
+        # do NOT emit a chart event here; the frontend strips the literal
+        # markdown so users see only the working inline chart.
 
         # Unknown item kind — surface as status for debugging.
         return AgentEvent(

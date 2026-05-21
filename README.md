@@ -182,7 +182,7 @@ Most variables are populated automatically by the deploy scripts (written to `.e
 ### Cleanup (mandatory)
 
 ```powershell
-az group delete --name rg-zava-demo --yes --no-wait
+az group delete --name rg-zava-a2a-smart-order-demo --yes --no-wait
 ```
 
 A forgotten environment will accrue tens of dollars per day silently.
@@ -234,6 +234,6 @@ This repository is a **public demonstration** under [`miguelmsft`](https://githu
 - **Foundry V2** features (Agents API, A2A connections, model availability) are evolving. Region and model availability may change; `scripts/verify-quota.ps1` is the source of truth for what your subscription can deploy today.
 - **All Zava data is synthetic.** Customers, SKUs, inventory, schedules, and orders are entirely fabricated. No real customer information is used or implied.
 - **No secrets in source.** All credentials are referenced via environment variables, generated at deploy time, or stored in Key Vault. Do not commit real subscription IDs, tenant IDs, or API keys.
-- **Cost.** Approximately **$15–25 per day** while deployed. Run `az group delete --name rg-zava-demo --yes --no-wait` when you're done.
+- **Cost.** Approximately **$15–25 per day** while deployed. Run `az group delete --name rg-zava-a2a-smart-order-demo --yes --no-wait` when you're done.
 
 Zava is a fictional company. Any resemblance to real manufacturers is coincidental.

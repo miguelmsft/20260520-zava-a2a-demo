@@ -17,10 +17,29 @@ export interface ChatPanelProps {
   error: string | null;
 }
 
+// Strip the literal ``![alt](sandbox:/mnt/data/...png)`` markdown that
+// Foundry's Code Interpreter embeds in assistant messages. The chart
+// itself is delivered out-of-band as a chart artifact (rendered below);
+// the sandbox URL is not browser-fetchable so we collapse it to a clean
+// inline mention instead of leaking broken markdown to the user.
+const SANDBOX_IMG_MD = /!\[([^\]]*)\]\(sandbox:\/?[^\s)]+\)/g;
+
+function stripSandboxImages(text: string): string {
+  if (!text || text.indexOf("sandbox:") === -1) return text;
+  return text
+    .replace(SANDBOX_IMG_MD, (_match, alt) => {
+      const label = (alt as string).trim() || "chart";
+      return `(See ${label} below.)`;
+    })
+    // Collapse double blank lines the substitution may have created.
+    .replace(/\n{3,}/g, "\n\n");
+}
+
 function renderText(text: string): ReactNode {
   if (!text) return null;
+  const cleaned = stripSandboxImages(text);
   // Split on newlines and interleave <br/> for readable plain rendering.
-  const lines = text.split("\n");
+  const lines = cleaned.split("\n");
   return lines.map((line, idx) => (
     <span key={idx}>
       {line}

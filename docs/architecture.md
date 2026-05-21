@@ -49,7 +49,7 @@ graph TB
         ACR["Azure Container Registry<br/>(Basic)"]
         KV["Key Vault<br/>TLS cert"]
         DNS["Public DNS Zone<br/>ops-agent.&lt;zone&gt;"]
-        UAMI["User-Assigned MI<br/>id-ops-agent<br/>(Workload Identity)"]
+        UAMI["User-Assigned MI<br/>id-zava-a2a-ops-agent<br/>(Workload Identity)"]
         AI["Application Insights<br/>+ Log Analytics"]
     end
 
@@ -89,7 +89,7 @@ Every Azure resource is provisioned by a Bicep module under `infra/modules/` (se
 | 8 | `Microsoft.ContainerRegistry/registries` | 2024-11-01-preview | `acr.bicep` | ACR Basic — single image (`ops-agent:latest`). Admin user disabled; AKS kubelet identity has AcrPull. | `eastus2` |
 | 9 | `Microsoft.KeyVault/vaults` | 2024-11-01 | `keyvault.bicep` | Holds the CA-issued TLS certificate `tls-cert-ops-agent` that the ingress serves. RBAC-authorized, soft-delete 7 days, no purge protection. | `eastus2` |
 | 10 | `Microsoft.Network/dnsZones` (Public) | 2023-07-01-preview | `dns.bicep` | Public DNS zone for the ingress hostname `ops-agent.<zone>`. Deployer is responsible for NS delegation at the registrar. | `global` |
-| 11 | `Microsoft.ManagedIdentity/userAssignedIdentities` (`id-ops-agent`) | 2024-11-30 | `identity.bicep` | UAMI federated to the K8s service account `default/ops-agent-sa`. Holds the `Foundry User` role on the Foundry account. | `eastus2` |
+| 11 | `Microsoft.ManagedIdentity/userAssignedIdentities` (`id-zava-a2a-ops-agent`) | 2024-11-30 | `identity.bicep` | UAMI federated to the K8s service account `default/ops-agent-sa`. Holds the `Foundry User` role on the Foundry account. | `eastus2` |
 | 12 | `Microsoft.ManagedIdentity/.../federatedIdentityCredentials` | 2024-11-30 | `identity.bicep` | Federated credential binding the UAMI to the AKS OIDC issuer + SA subject + `api://AzureADTokenExchange` audience. | `eastus2` |
 | 13 | `Microsoft.Authorization/roleAssignments` (×4) | 2022-04-01 | `identity.bicep` (and `main.bicep` for AcrPull) | UAMI→Foundry User on Foundry; App Routing identity→KV Certificate User + KV Secrets User on KV; App Routing identity→DNS Zone Contributor on zone; AKS kubelet identity→AcrPull on ACR. | scoped per resource |
 
@@ -147,7 +147,7 @@ Three identity types participate: the **deployer** (a human Entra user), the **O
 ```mermaid
 graph LR
     deployer(["Deployer<br/>(miguelmsft)"])
-    uami["UAMI: id-ops-agent<br/>(SP)"]
+    uami["UAMI: id-zava-a2a-ops-agent<br/>(SP)"]
     appRoute["App Routing add-on<br/>system identity (SP)"]
     kubelet["AKS kubelet identity<br/>(SP)"]
     saK8s["K8s SA:<br/>default/ops-agent-sa"]
@@ -168,7 +168,7 @@ graph LR
 | Principal | Type | Role | Scope | Granted by | Why |
 |---|---|---|---|---|---|
 | Deployer (Entra user) | Human | **Foundry Account Owner** (Cognitive Services Contributor + supporting) | Foundry account | manual (per [`../plan.md` §A.8](../plan.md)) | Create project, agent, A2A connection, model deployments; read Tier 1 traces. |
-| `id-ops-agent` UAMI | Service principal | **Foundry User** (`53ca6127-…`) | Foundry account | `identity.bicep` | Pod calls `gpt-5.4-mini` worker deployment from inside the LangGraph executor via `AzureChatOpenAI`. |
+| `id-zava-a2a-ops-agent` UAMI | Service principal | **Foundry User** (`53ca6127-…`) | Foundry account | `identity.bicep` | Pod calls `gpt-5.4-mini` worker deployment from inside the LangGraph executor via `AzureChatOpenAI`. |
 | `default/ops-agent-sa` | K8s service account | _(federated to UAMI)_ | — | `deployment.yaml` + `identity.bicep` `federatedIdentityCredentials` | OIDC subject `system:serviceaccount:default:ops-agent-sa`, audience `api://AzureADTokenExchange`. |
 | App Routing add-on identity | System-assigned SP | **Key Vault Certificate User** (`db79e9a7-…`), **Key Vault Secrets User** (`4633458b-…`) | Key Vault | `identity.bicep` | Pull `tls-cert-ops-agent` and serve it on the ingress. |
 | App Routing add-on identity | System-assigned SP | **DNS Zone Contributor** (`befefa01-…`) | DNS zone | `identity.bicep` | Create the A record `ops-agent.<zone>` pointing at the ingress LB IP. |
@@ -184,7 +184,7 @@ All K8s objects live in the `default` namespace of a single-node AKS cluster. Th
 
 | Kind | Name | Defining manifest | Notes |
 |---|---|---|---|
-| `ServiceAccount` | `ops-agent-sa` | `k8s/deployment.yaml` | Annotated `azure.workload.identity/client-id: <UAMI client ID>`. Federated to UAMI `id-ops-agent`. |
+| `ServiceAccount` | `ops-agent-sa` | `k8s/deployment.yaml` | Annotated `azure.workload.identity/client-id: <UAMI client ID>`. Federated to UAMI `id-zava-a2a-ops-agent`. |
 | `Deployment` | `ops-agent` | `k8s/deployment.yaml` | 1 replica. Pod label `azure.workload.identity/use: "true"`. Image `${ACR_LOGIN_SERVER}/ops-agent:latest`, port 9000. Liveness + readiness `GET /health` (period 30s / 10s). Resources: 250 m / 256 Mi requests, 500 m / 512 Mi limits. |
 | `Service` | `ops-agent-svc` | `k8s/service.yaml` | `ClusterIP`, port 9000, selector matches the Deployment's pod labels. |
 | `Ingress` | `ops-agent` | `k8s/ingress.yaml` | `ingressClassName: webapprouting.kubernetes.azure.com`. Annotation `kubernetes.azure.com/tls-cert-keyvault-uri: https://<kv>.vault.azure.net/certificates/tls-cert-ops-agent`. Host `ops-agent.<DNS_ZONE>`, TLS `secretName: keyvault-ops-agent-ingress` (synthesized by App Routing), backend `ops-agent-svc:9000`. |

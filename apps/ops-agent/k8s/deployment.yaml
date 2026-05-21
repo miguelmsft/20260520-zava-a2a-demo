@@ -52,7 +52,7 @@ spec:
             - name: AZURE_OPENAI_ENDPOINT
               # Foundry account inference endpoint (Azure OpenAI-compatible).
               # Set from main.bicep output `accountInferenceEndpoint`.
-              # Example: https://foundry-zava-demo.services.ai.azure.com
+              # Example: https://foundry-zava-a2a-smartorder.services.ai.azure.com
               value: "${FOUNDRY_ACCOUNT_ENDPOINT}"
             - name: FOUNDRY_PROJECT_ENDPOINT
               # Foundry V2 project endpoint (Responses API / AIProjectClient).

@@ -24,12 +24,12 @@
 
 .PARAMETER AcrLoginServer
     REQUIRED. Fully-qualified ACR login server (e.g.,
-    `acrzavademoabc123.azurecr.io`). Surfaced by scripts/deploy-infra.ps1 in
+    `acrzavaa2asmartorderabc123.azurecr.io`). Surfaced by scripts/deploy-infra.ps1 in
     its final summary as "ACR login server".
 
 .PARAMETER AcrName
     Optional. ACR resource name without the `.azurecr.io` suffix (e.g.,
-    `acrzavademoabc123`). If omitted, derived by stripping `.azurecr.io` from
+    `acrzavaa2asmartorderabc123`). If omitted, derived by stripping `.azurecr.io` from
     -AcrLoginServer.
 
 .PARAMETER ImageTag
@@ -46,11 +46,11 @@
     Optional. Build context directory. Default: `apps/ops-agent`.
 
 .EXAMPLE
-    ./scripts/build-and-push.ps1 -AcrLoginServer acrzavademoabc123.azurecr.io
+    ./scripts/build-and-push.ps1 -AcrLoginServer acrzavaa2asmartorderabc123.azurecr.io
     Build with all defaults; produces `ops-agent:latest` in the registry.
 
 .EXAMPLE
-    ./scripts/build-and-push.ps1 -AcrLoginServer acrzavademoabc123.azurecr.io -ImageTag v1.0.0
+    ./scripts/build-and-push.ps1 -AcrLoginServer acrzavaa2asmartorderabc123.azurecr.io -ImageTag v1.0.0
     Build a versioned tag. Remember to pass `-ImageTag v1.0.0` to deploy-k8s.ps1.
 
 .NOTES

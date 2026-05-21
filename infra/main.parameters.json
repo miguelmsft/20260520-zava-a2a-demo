@@ -6,10 +6,10 @@
       "value": "eastus2"
     },
     "foundryName": {
-      "value": "foundry-zava-demo"
+      "value": "foundry-zava-a2a-smartorder"
     },
     "projectName": {
-      "value": "zava-project"
+      "value": "smart-order-feasibility"
     },
     "deployerPrincipalType": {
       "value": "User"

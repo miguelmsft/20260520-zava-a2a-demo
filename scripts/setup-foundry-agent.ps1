@@ -27,7 +27,7 @@
 
 .PARAMETER FoundryEndpoint
     Foundry project endpoint, e.g.
-    https://zava-foundry.services.ai.azure.com/api/projects/zava-project
+    https://foundry-zava-a2a-smartorder.services.ai.azure.com/api/projects/smart-order-feasibility
 
 .PARAMETER OrchestratorDeploymentName
     Model deployment name for the orchestrator agent (default: gpt-55-orchestrator).
@@ -61,10 +61,10 @@
 
 .EXAMPLE
     ./scripts/setup-foundry-agent.ps1 `
-        -FoundryEndpoint "https://zava-foundry.services.ai.azure.com/api/projects/zava-project" `
-        -OpsAgentEndpoint "https://ops-agent.zava.example.com/" `
+        -FoundryEndpoint "https://foundry-zava-a2a-smartorder.services.ai.azure.com/api/projects/smart-order-feasibility" `
+        -OpsAgentEndpoint "https://ops-agent.zava-a2a-smart-order.example.com/" `
         -OpsAgentApiKey  "<secret-from-kubectl>" `
-        -AppInsightsName "zava-appinsights"
+        -AppInsightsName "appi-zava-a2a-smart-order"
 #>
 
 [CmdletBinding()]

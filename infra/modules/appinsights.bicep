@@ -22,14 +22,14 @@
 param location string = 'eastus2'
 
 @description('Application Insights component name.')
-param appInsightsName string = 'appi-zava-demo'
+param appInsightsName string = 'appi-zava-a2a-smart-order'
 
 @description('Log Analytics workspace name (workspace-based App Insights backend).')
-param logAnalyticsName string = 'log-zava-demo'
+param logAnalyticsName string = 'log-zava-a2a-smart-order'
 
 @description('Tags applied to both resources.')
 param tags object = {
-  project: 'zava-a2a-demo'
+  project: 'zava-a2a-smart-order-demo'
   environment: 'demo'
   managedBy: 'bicep'
 }

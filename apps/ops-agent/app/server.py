@@ -44,10 +44,13 @@ API_KEY_HEADER = "x-api-key"
 
 # Routes that bypass API-key auth: K8s probes need /health and A2A discovery
 # clients (including Foundry) fetch the agent card before they hold a key.
+# Foundry's A2A client probes the legacy ``/.well-known/agent.json`` path
+# in addition to the newer ``agent-card.json`` — we serve both as aliases.
 PUBLIC_PATHS: frozenset[str] = frozenset(
     {
         "/health",
         "/.well-known/agent-card.json",
+        "/.well-known/agent.json",
     }
 )
 
@@ -131,6 +134,14 @@ def build_app(api_key: str | None = None) -> Starlette:
 
     routes: list[Route] = []
     routes.extend(create_agent_card_routes(agent_card))
+    # Foundry's A2A client probes the legacy ``/.well-known/agent.json``
+    # path. Serve the same card at that URL too so discovery succeeds
+    # regardless of which spec version the remote client implements.
+    routes.extend(
+        create_agent_card_routes(
+            agent_card, card_url="/.well-known/agent.json"
+        )
+    )
     # ``enable_v0_3_compat=True`` lets the SDK auto-detect A2A v0.3 wire format
     # (when the ``A2A-Version`` header is absent) per research §3.8.
     routes.extend(

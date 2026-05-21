@@ -75,6 +75,8 @@ export interface A2AHopData {
 export interface ChartData {
   mime_type?: string;
   file_id?: string;
+  container_id?: string;
+  filename?: string;
   url?: string | null;
   data_b64?: string | null;
 }

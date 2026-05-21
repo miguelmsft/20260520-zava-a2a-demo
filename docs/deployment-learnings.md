@@ -199,9 +199,9 @@ treats a `CustomKeys` connection with the right metadata as an A2A target.
 ```powershell
 $apiKey = '<your 32-byte base64 A2A key from deploy-k8s.ps1>'
 $sub    = '<subscription id>'
-$rg     = 'rg-zava-demo'
-$acct   = 'foundry-zava-demo'
-$proj   = 'zava-project'
+$rg     = 'rg-zava-a2a-smart-order-demo'
+$acct   = 'foundry-zava-a2a-smartorder'
+$proj   = 'smart-order-feasibility'
 $conn   = 'ops-agent-a2a'
 
 $url  = "https://management.azure.com/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.CognitiveServices/accounts/$acct/projects/$proj/connections/$conn?api-version=2025-06-01"
@@ -342,12 +342,12 @@ of room.
 
 ```powershell
 $ver = az cognitiveservices account deployment show `
-  --resource-group rg-zava-demo --name foundry-zava-demo `
+  --resource-group rg-zava-a2a-smart-order-demo --name foundry-zava-a2a-smartorder `
   --deployment-name gpt-55-orchestrator --query 'properties.model.version' -o tsv
 
 foreach ($d in @('gpt-55-orchestrator','gpt-54mini-worker')) {
   az cognitiveservices account deployment create `
-    --resource-group rg-zava-demo --name foundry-zava-demo `
+    --resource-group rg-zava-a2a-smart-order-demo --name foundry-zava-a2a-smartorder `
     --deployment-name $d `
     --model-name gpt-5.4-mini --model-version $ver --model-format OpenAI `
     --sku-capacity 50 --sku-name GlobalStandard
@@ -365,10 +365,10 @@ resolving the API server's DNS name, ingress IP doesn't respond. Verify
 and recover:
 
 ```powershell
-az aks show --resource-group rg-zava-demo --name aks-zava-demo `
+az aks show --resource-group rg-zava-a2a-smart-order-demo --name aks-zava-a2a-smart-order `
   --query 'powerState.code' -o tsv
 # If "Stopped":
-az aks start --resource-group rg-zava-demo --name aks-zava-demo
+az aks start --resource-group rg-zava-a2a-smart-order-demo --name aks-zava-a2a-smart-order
 # Wait ~3-5 minutes
 kubectl rollout restart deployment/ops-agent -n default
 kubectl rollout status deployment/ops-agent -n default --timeout=180s

@@ -24,16 +24,16 @@ targetScope = 'resourceGroup'
 param location string = 'eastus2'
 
 @description('Foundry V2 account name (globally unique within Cognitive Services namespace).')
-param foundryName string = 'foundry-zava-demo'
+param foundryName string = 'foundry-zava-a2a-smartorder'
 
 @description('Foundry V2 project name (child of the Foundry account).')
-param projectName string = 'zava-project'
+param projectName string = 'smart-order-feasibility'
 
 @description('Application Insights component name.')
-param appInsightsName string = 'appi-zava-demo'
+param appInsightsName string = 'appi-zava-a2a-smart-order'
 
 @description('Log Analytics workspace name backing Application Insights.')
-param logAnalyticsName string = 'log-zava-demo'
+param logAnalyticsName string = 'log-zava-a2a-smart-order'
 
 @description('Azure AD object ID (principal ID) of the deployer to grant Foundry Account Owner role on the Foundry resource. REQUIRED. Pass via deploy script: --parameters deployerPrincipalId=<oid>.')
 param deployerPrincipalId string
@@ -48,7 +48,7 @@ param deployerPrincipalType string = 'User'
 
 @description('Tags applied to all resources.')
 param tags object = {
-  project: 'zava-a2a-demo'
+  project: 'zava-a2a-smart-order-demo'
   environment: 'demo'
   managedBy: 'bicep'
 }
@@ -67,21 +67,21 @@ param workerDeploymentName string = 'gpt-54mini-worker'
 // --- Step 6: AKS + ACR parameters ---
 
 @description('AKS cluster resource name.')
-param aksClusterName string = 'aks-zava-demo'
+param aksClusterName string = 'aks-zava-a2a-smart-order'
 
 @description('Globally-unique ACR name. Must be alphanumeric only, 5–50 chars. Defaults to a name derived from uniqueString(resourceGroup().id) to avoid collisions.')
-param acrName string = 'acrzavademo${uniqueString(resourceGroup().id)}'
+param acrName string = 'acrzavaa2asmartorder${uniqueString(resourceGroup().id)}'
 
 // --- Step 7: Key Vault + DNS + Workload Identity parameters ---
 
-@description('Globally-unique Key Vault name. Max 24 chars, alphanumeric + hyphen, must start with a letter. Default "kv-zava-<13-char hash>" stays under 24 (8 + 13 = 21 chars).')
-param keyVaultName string = 'kv-zava-${uniqueString(resourceGroup().id)}'
+@description('Globally-unique Key Vault name. Max 24 chars, alphanumeric + hyphen, must start with a letter. Default "kv-zava-a2a<13-char hash>" lands exactly at 24 chars (11 + 13).')
+param keyVaultName string = 'kv-zava-a2a${uniqueString(resourceGroup().id)}'
 
 @description('Public DNS zone name for the demo (e.g., "zava-demo.example.com"). The default is a placeholder — override with a domain you control. Delegation to Azure DNS is a manual post-deploy step (see deployment script).')
-param dnsZoneName string = 'zava.example.com'
+param dnsZoneName string = 'zava-a2a-smart-order.example.com'
 
 @description('User-Assigned Managed Identity name for the LangGraph Ops Agent pod (Workload Identity).')
-param uamiName string = 'id-ops-agent'
+param uamiName string = 'id-zava-a2a-ops-agent'
 
 // -----------------------------------------------------------------------------
 // Constants — Built-in role definition GUIDs

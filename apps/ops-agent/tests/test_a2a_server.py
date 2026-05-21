@@ -127,6 +127,34 @@ def test_agent_card_discovery(client: TestClient) -> None:
     assert card["name"] == "Zava Manufacturing Ops Agent"
 
 
+def test_agent_card_legacy_alias(client: TestClient) -> None:
+    """Foundry's A2A client probes the older ``/.well-known/agent.json``
+    URL (no dash). The same card must be served from both paths so that
+    discovery succeeds regardless of which A2A spec version the client
+    implements.
+    """
+
+    new_resp = client.get("/.well-known/agent-card.json")
+    legacy_resp = client.get("/.well-known/agent.json")
+    assert legacy_resp.status_code == 200, legacy_resp.text
+    # Both URLs must return the exact same card payload.
+    assert legacy_resp.json() == new_resp.json()
+
+
+def test_agent_card_legacy_alias_no_auth_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The legacy alias must NOT require ``x-api-key`` — public discovery."""
+
+    # Build a fresh client with no x-api-key header set.
+    monkeypatch.setenv("A2A_API_KEY", API_KEY)
+    from app.server import build_app
+
+    raw_client = TestClient(build_app(api_key=API_KEY))
+    resp = raw_client.get("/.well-known/agent.json")
+    assert resp.status_code == 200, resp.text
+
+
 def test_health_probe(client: TestClient) -> None:
     """``GET /health`` is unauthenticated and returns 200."""
     resp = client.get("/health")

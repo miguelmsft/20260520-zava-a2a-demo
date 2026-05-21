@@ -4,8 +4,8 @@
  * Runs **live** against the local stack:
  *   - Vite dev server (http://localhost:5173)
  *   - Local FastAPI backend (http://localhost:8000) calling real Foundry
- *     project `zava-project` on `foundry-zava-demo`, which in turn calls
- *     the deployed LangGraph ops-agent on AKS via A2A.
+ *     project `smart-order-feasibility` on `foundry-zava-a2a-smartorder`,
+ *     which in turn calls the deployed LangGraph ops-agent on AKS via A2A.
  *
  * Validates the 10-step test plan:
  *   1. Initial state — tab switcher renders, conversation default, empty state

@@ -29,7 +29,7 @@
     mitigation rationale.
 
 .PARAMETER ResourceGroupName
-    Resource group to create / deploy into. Default: rg-zava-demo.
+    Resource group to create / deploy into. Default: rg-zava-a2a-smart-order-demo.
 
 .PARAMETER Location
     Azure region. Default: eastus2 (matches infra/main.parameters.json).
@@ -78,7 +78,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [string] $ResourceGroupName = 'rg-zava-demo',
+    [string] $ResourceGroupName = 'rg-zava-a2a-smart-order-demo',
 
     [Parameter(Mandatory = $false)]
     [string] $Location = 'eastus2',

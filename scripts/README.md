@@ -69,5 +69,5 @@ In addition, the principal must be allowed to:
 - **Azure OpenAI tokens** — pay-as-you-go; depends on demo traffic.
 
 `deploy-infra.ps1` prints this warning and pauses for confirmation before
-creating anything. Tear down with `az group delete --name rg-zava-demo --yes`
+creating anything. Tear down with `az group delete --name rg-zava-a2a-smart-order-demo --yes`
 when finished.
