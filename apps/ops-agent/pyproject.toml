@@ -31,3 +31,6 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: tests that require live Azure OpenAI (skipped by default; run with `-m integration`)",
+]

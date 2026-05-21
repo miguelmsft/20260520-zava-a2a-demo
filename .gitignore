@@ -64,3 +64,7 @@ infra/**/*.json
 # Researcher temporary cache files
 *.html
 
+
+# Wave 2 build artifacts
+tsconfig.tsbuildinfo
+dist/

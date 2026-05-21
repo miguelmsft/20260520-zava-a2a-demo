@@ -13,6 +13,9 @@
     },
     "deployerPrincipalType": {
       "value": "User"
+    },
+    "useGpt55": {
+      "value": true
     }
   },
   "_comments": {
