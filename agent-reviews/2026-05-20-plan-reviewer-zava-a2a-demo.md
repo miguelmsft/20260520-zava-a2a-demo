@@ -3,7 +3,7 @@ reviewer: plan-reviewer
 subject: Zava Smart Order Feasibility — A2A Multi-Agent Demo (plan.md)
 companion: plan-creator
 date: 2026-05-20
-verdict: NEEDS REWORK
+verdict: APPROVED
 ---
 
 ## Review Round 1 — 2026-05-20
@@ -124,3 +124,86 @@ The A2A request/response in §A.5 lines 198–268 is correct A2A 0.3 wire shape 
 **No `🔴 Critical` findings** — all blockers are `🟡 Important`. Once these seven are addressed, the plan should reach `APPROVED` quickly. The 🟢 Minor items can be deferred.
 
 **Recommended next step:** Re-run `plan-creator` with this review attached. Focus the round-2 edit on findings 1–7 above; the rest of the plan is solid and should not need substantive change.
+
+
+
+## Review Round 2 — 2026-05-20
+
+The revision cleanly addresses all seven R1 must-fix findings. The duplicated tail is gone, A2A authentication is now a first-class concern threaded end-to-end (Step 9 middleware → Step 10 K8s Secret → Step 15 deploy-script key generation → Step 11 Foundry connection mirror), the `useGpt55` fallback is unambiguous, Step 11 makes the portal the canonical path, Step 16 has a real KQL fallback, §A.5 has `artifactId`, and DNS/TLS are promoted to gating risks in §F.1. R16 (artifact passthrough) and R17 (open relay) have been added to the risk register. No new must-fix issues identified.
+
+### Fix Verification
+
+1. **Duplicated tail (orphan mermaid + dup §E + dup §F) — ✅ fixed.** The document now has exactly one `## Part D` (line 1225), one `## Part E` (line 1336), one `## Part F` (line 1366), and a final `## Plan Round 1 — Self-Assessment` at line 1410. No orphan Mermaid fragments. Open Questions Q1–Q5 are preserved as §F.4 (line 1426) with the resolution path for Q3 (portal-only) and Q4 (key-based auth) explicitly recorded.
+
+2. **A2A server unauthenticated (Step 9) — ✅ fixed.** Step 9 (line 695) specifies a Starlette `x-api-key` middleware reading from `A2A_API_KEY` env var with `hmac.compare_digest`, fail-secure startup if the env var is missing (line 695 last sentence), and three verification curls at lines 704–706 covering "no header → 401", "wrong key → 401", "correct key → 200". Health and agent-card paths are correctly exempted. Cross-references to Steps 10/11/15 are present.
+
+3. **`useGpt55=false` fallback under-specified (Step 4) — ✅ fixed.** Step 4 (lines 541–549) now explicitly emits **two distinct deployments in both branches** with stable orchestrator name `gpt-55-orchestrator`, parameterized via `orchestratorDeploymentName` / `workerDeploymentName` Bicep params with module outputs. Verification at line 555 checks that `az bicep build` produces exactly two deployment resources in both branches. Step 11 (line 761) reads the name from `FOUNDRY_ORCHESTRATOR_DEPLOYMENT` env var with an explicit "do NOT hard-code" comment — implementer cannot miss this.
+
+4. **Step 11 portal-vs-SDK ambiguity — ✅ fixed.** Step 11 (lines 767–779) re-frames `create_a2a_connection.py` as **portal-first, SDK fallback**: nine explicit portal click-through steps printed to stdout (Project → Connections → Add → "Agent (A2A)" type, header name `x-api-key`, etc.), then a `try/except` SDK attempt that exits 0 either way. A `--verify` mode confirms the connection exists. Implementation Notes (line 799) explicitly call out "portal-created in the current Foundry V2 Preview" with research citation.
+
+5. **App Insights → Foundry link verification (Step 16) — ✅ fixed.** Step 16 (lines 965–968) now includes: (a) instructions to run a fresh `test_agent.py` invocation, (b) explicit 5-minute portal-Traces-tab poll window, (c) automated KQL fallback `az monitor app-insights query --analytics-query "requests | where timestamp > ago(10m) | where customDimensions.gen_ai_agent_name == 'zava-customer-service' | take 5"`, and (d) interpretation guidance distinguishing UI lag from broken linkage. Verification at line 978 specifies the 10-minute outer bound for failure.
+
+6. **§A.5 artifact missing `artifactId` — ✅ fixed.** Line 240 now shows `"artifactId": "art-uuid-fea123"` in the canonical artifact sample. `parts[].kind: "data"` is preserved. Round-trip through `a2a_sdk.types.Artifact` should be clean.
+
+7. **Q1/Q2 promoted to gating risks (§F.1) — ✅ fixed.** §F.1 (lines 1388–1397) explicitly lists Q1 (DNS zone) and Q2 (CA-issued TLS cert) as pre-Step-15 gating items, alongside R1/R4/R7. Cross-references back to §F.4 are present. Q1 and Q2 also remain in §F.4 with full resolution-path tables.
+
+### Plan Contract Compliance
+
+All required sections present and well-developed. Structural invariants hold: every step has runnable verification; dependencies acyclic; Step 26 is end-to-end smoke; `az group delete` rollback acceptable for demo scope; security coverage threaded through Steps 7, 9, 10, 11, 15.
+
+### 1. Tech Stack Evaluation
+
+No material issues. R1 minor (missing `openai` client pin in backend deps) was not addressed but is `🟢 Minor` — waived.
+
+### 2. Data / Interface / Contract Design
+
+R1 must-fix (`artifactId`) is now resolved. R1 minor (per-type `AgentEvent.data` shapes) not explicitly addressed but is `🟢 Minor` — waived.
+
+### 3. Architecture Concerns
+
+A2A auth posture fully addressed (R1 must-fix #2). Single replica remains for demo (acceptable, `🟢 Minor` waived). No new concerns.
+
+### 4. Security & Access Control
+
+The `A2A_API_KEY` story is end-to-end consistent across Step 9 (middleware + fail-secure), Step 10 (Secret env var mount), Step 15 (`openssl rand -base64 32` + `kubectl create secret` upsert), Step 11 (portal mirror), and §F R17. Constant-time comparison is correct. Strong improvement over R1.
+
+### 5. Implementation Gaps
+
+- `🟢 Minor` (nice-to-have, optional): §F.1 (line 1394) references "Step 7.5 (TLS cert provisioning)" but no Step 7.5 exists — TLS cert work was folded into **Step 14** (lines 893–898). This is a stale label, not a functional gap: the actual work, KV name (`tls-cert-ops-agent`), Ingress-annotation linkage, and verification are all in Step 14 and consistent with Step 10's Ingress annotation (line 737) and Step 15's expectations. Trivial to fix on a future pass (s/Step 7.5/Step 14/ in §F.1 line 1394) but does not block APPROVED.
+
+### 6. Assumptions & Open Questions
+
+Q1 and Q2 are now both in §F.1 (gating) and §F.4 (resolution path). Q3, Q4, Q5 resolved in §F.4. Assumptions table (lines 1503–1511) unchanged from R1 — still honest and reasonable.
+
+### 7. Testability & Verification
+
+Step 9's three-curl verification is exactly what was requested. Step 16's KQL fallback is automatable evidence (not just a portal screenshot). Step 11 verifies env-var indirection works in both `useGpt55` branches (line 793). Step 11 also includes the R16 artifact-passthrough check (line 787) — surfaces the risk early.
+
+### 8. Edge Cases & Failure Modes
+
+R16 and R17 added to the risk register at lines 1385–1386 with mitigations and detection criteria. Risk register is now 17 items, comprehensive.
+
+### 9. Things Done Well
+
+- The single biggest improvement is end-to-end coherence of the `A2A_API_KEY` lifecycle. The plan now reads as if a single author thought through the secret from generation → mount → server-side validation → Foundry-side configuration. That's exactly how this kind of bug is prevented in real deployments.
+- The KQL fallback in Step 16 distinguishes "linkage broken" from "portal UI lag" — that's the senior-engineer move.
+- Parameterizing the orchestrator deployment name as a Bicep input/output instead of a string literal is the clean fix.
+- §F.1 gating section reads as a true pre-flight checklist now, not a risk-register echo.
+
+### Suggested Improvements (Prioritized)
+
+These are all `🟢 Minor` and waived for APPROVED. Capture for a future polish pass:
+
+1. (optional) §F.1 line 1394: replace "Step 7.5 (TLS cert provisioning)" with "Step 14 (TLS cert provisioning sub-step)" — the label is stale.
+2. (optional) Add `openai>=1.x` to the backend Python dependency table (R1 carry-over).
+3. (optional) Add Vitest tests for `useChat.ts` SSE parsing and a mocked `agent_client.py` test (R1 carry-over).
+4. (optional) Specify per-type `data` shapes for the `AgentEvent` envelope (`status`, `text_delta`, `tool_call`, `a2a_hop`, `chart`, `done`) once in §A.5 or Step 12 to prevent frontend/backend drift (R1 carry-over).
+5. (optional) Step 18: add an explicit `A2A-Version: 1.0` vs. header-absent paired assertion (R1 carry-over).
+
+---
+
+## Implementation Readiness: APPROVED
+
+All seven Round 1 must-fix `🟡 Important` findings are resolved with cited line numbers above. No new `🔴 Critical` or `🟡 Important` findings introduced in the revision. The single remaining inconsistency (the "Step 7.5" label in §F.1) is purely cosmetic and waived as `🟢 Minor`.
+
+**The plan is ready to implement.** Proceed to step-implementer / Phase 7 execution per the autopilot mandate.

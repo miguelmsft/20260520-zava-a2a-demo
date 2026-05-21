@@ -2,7 +2,7 @@
 
 **Plan slug:** `zava-a2a-demo`
 **Created:** 2026-05-20
-**Status:** Round 2 (revised after plan-reviewer R1) — Awaiting re-review
+**Status:** Approved (Round 2) — ready for implementation
 
 ---
 
@@ -1391,7 +1391,7 @@ The following risks/questions must be **resolved or accepted** before Step 15 (A
 
 - **R1 (gpt-5.5 quota):** Run `scripts/verify-quota.ps1` (Step 14). If 0, decide between (a) request quota, (b) fallback to dual `gpt-5.4-mini` (`useGpt55=false`). Record decision in `demo-status.md`.
 - **Q1 (DNS zone/domain) [from §F.4]:** A real DNS zone delegated to Azure is required for the public AKS endpoint. Either confirm a domain is available and delegated, OR accept testing-only fallback with nip.io/sslip.io (no CA cert possible). Record domain in `demo-status.md`.
-- **Q2 (CA-issued TLS cert) [from §F.4]:** Confirm the cert acquisition path — purchased cert, Let's Encrypt + cert-manager, Key Vault CA integration, or internal CA. Cannot proceed past Step 7.5 (TLS cert provisioning) without this.
+- **Q2 (CA-issued TLS cert) [from §F.4]:** Confirm the cert acquisition path — purchased cert, Let's Encrypt + cert-manager, Key Vault CA integration, or internal CA. Cannot proceed past Step 14 (TLS cert provisioning sub-step) without this.
 - **R7 (DNS delegation):** Confirm NS delegation from registrar to Azure DNS is in place — otherwise public DNS resolution will fail.
 - **R4 (TLS cert):** Confirm CA cert can be imported into Key Vault and matches the DNS zone domain.
 

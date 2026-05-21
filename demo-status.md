@@ -31,30 +31,21 @@ Planning (Phase 2) — autopilot enabled through Phase 7. Research Phase 1 COMPL
 | 8 | Model availability + A2A support — GPT-5.5, GPT-5.4, GPT-5.5-mini, GPT-5.4-mini in Foundry V2 | ms-docs-researcher | ✅ Approved | 2 | APPROVED | research/2026-05-20-model-availability.md | agent-reviews/2026-05-20-model-availability-review.md | — | 2026-05-20 |
 
 ## Planning
-- Status: Awaiting Review (Round 2)
+- Status: ✅ Approved (Round 2)
 - Rounds: 2
-- Verdict: R1 = NEEDS REWORK (7 🟡 Important, 0 🔴 Critical); revised
-- Plan path: plan.md (1512 lines, single Part A-F, 26 steps)
+- Verdict: APPROVED — all 7 R1 Important findings ✅ fixed; 0 Critical, 0 Important remaining
+- Plan path: plan.md (1512 lines, 26 implementation steps + R16+R17 risks)
 - Review path: agent-reviews/2026-05-20-plan-reviewer-zava-a2a-demo.md
 - Blocker: —
 - Last updated: 2026-05-20
-- R1→R2 changes:
-  - Removed duplicated tail (orphan mermaid + dup Part E + dup Part F)
-  - Salvaged Open Questions into new §F.4; Phase 8 Live Testing into §E.2
-  - §A.5: added `artifactId` to artifact sample
-  - Step 4: explicit useGpt55 fallback emits two distinct gpt-5.4-mini deployments
-  - Step 9: x-api-key middleware with fail-secure startup; expanded verification curls
-  - Step 10: K8s `ops-agent-secrets` Secret wired into deployment env
-  - Step 11: portal-canonical A2A connection + SDK try/except fallback + artifact passthrough check
-  - Step 14: TLS cert provisioning + verification folded in
-  - Step 15: A2A API key generation + Secret upsert in deploy script
-  - Step 16: wait/poll for traces + KQL fallback diagnostic
-  - §A.8: A2A auth row clarified (key-based with rejection at server)
-  - §F: added R16 (artifact passthrough) and R17 (open relay)
-  - §F.1: promoted Q1 (DNS) + Q2 (TLS) to gating
+- Reviewer quote: "The plan is ready to implement. Proceed to step-implementer / Phase 7 execution per the autopilot mandate."
 
 ## Implementation
-[Tracked in plan.md once created.]
+- Status: In Progress (Phase 3 — autopilot)
+- Plan owner: plan.md (authoritative step list, dependency graph, verification criteria)
+- Total steps: 26
+- Approach: Parallel waves per plan.md §D.2; each step uses step-implementer + step-reviewer loop (max 5 rounds)
+- Last updated: 2026-05-20
 
 ## Test Plan
 - Status: Not Started
