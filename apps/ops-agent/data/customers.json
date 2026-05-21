@@ -1,0 +1,77 @@
+{
+  "$schema": "CustomerProfiles",
+  "customers": [
+    {
+      "customer_id": "CUST-001",
+      "name": "Apex Hydraulics",
+      "priority_tier": "platinum",
+      "region": "Northeast US",
+      "payment_terms": "Net 30",
+      "annual_volume": 850000
+    },
+    {
+      "customer_id": "CUST-002",
+      "name": "Pacific Power Systems",
+      "priority_tier": "platinum",
+      "region": "West US",
+      "payment_terms": "Net 30",
+      "annual_volume": 1240000
+    },
+    {
+      "customer_id": "CUST-003",
+      "name": "MidWest Industrial Services",
+      "priority_tier": "gold",
+      "region": "Midwest US",
+      "payment_terms": "Net 45",
+      "annual_volume": 520000
+    },
+    {
+      "customer_id": "CUST-004",
+      "name": "Lonestar Refining Equipment",
+      "priority_tier": "gold",
+      "region": "South Central US",
+      "payment_terms": "Net 45",
+      "annual_volume": 470000
+    },
+    {
+      "customer_id": "CUST-005",
+      "name": "Cascade Process Solutions",
+      "priority_tier": "gold",
+      "region": "Pacific Northwest",
+      "payment_terms": "Net 45",
+      "annual_volume": 385000
+    },
+    {
+      "customer_id": "CUST-006",
+      "name": "Atlantic Marine Works",
+      "priority_tier": "silver",
+      "region": "Southeast US",
+      "payment_terms": "Net 60",
+      "annual_volume": 220000
+    },
+    {
+      "customer_id": "CUST-007",
+      "name": "Rocky Mountain Pumping Co.",
+      "priority_tier": "silver",
+      "region": "Mountain US",
+      "payment_terms": "Net 60",
+      "annual_volume": 180000
+    },
+    {
+      "customer_id": "CUST-008",
+      "name": "Heartland AgriTech",
+      "priority_tier": "standard",
+      "region": "Midwest US",
+      "payment_terms": "Net 60",
+      "annual_volume": 95000
+    },
+    {
+      "customer_id": "CUST-009",
+      "name": "Sunbelt Municipal Water",
+      "priority_tier": "standard",
+      "region": "Southwest US",
+      "payment_terms": "Net 60",
+      "annual_volume": 72000
+    }
+  ]
+}

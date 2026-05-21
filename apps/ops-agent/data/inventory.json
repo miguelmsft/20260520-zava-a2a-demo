@@ -1,0 +1,161 @@
+{
+  "$schema": "Inventory",
+  "items": [
+    {
+      "sku": "ZP-7000",
+      "name": "Industrial Centrifugal Pump",
+      "category": "pumps",
+      "on_hand": 45,
+      "allocated": 12,
+      "reserved": 8,
+      "available": 25,
+      "reorder_point": 20,
+      "supplier_lead_time_days": 21,
+      "unit_cost": 2450.00
+    },
+    {
+      "sku": "ZP-7100",
+      "name": "High-Pressure Diaphragm Pump",
+      "category": "pumps",
+      "on_hand": 30,
+      "allocated": 6,
+      "reserved": 4,
+      "available": 20,
+      "reorder_point": 15,
+      "supplier_lead_time_days": 28,
+      "unit_cost": 3120.00
+    },
+    {
+      "sku": "ZP-7200",
+      "name": "Variable-Speed Booster Pump",
+      "category": "pumps",
+      "on_hand": 18,
+      "allocated": 10,
+      "reserved": 2,
+      "available": 6,
+      "reorder_point": 12,
+      "supplier_lead_time_days": 35,
+      "unit_cost": 4180.00
+    },
+    {
+      "sku": "ZP-7300",
+      "name": "Sanitary Process Pump",
+      "category": "pumps",
+      "on_hand": 22,
+      "allocated": 5,
+      "reserved": 3,
+      "available": 14,
+      "reorder_point": 10,
+      "supplier_lead_time_days": 24,
+      "unit_cost": 2890.00
+    },
+    {
+      "sku": "ZM-3100",
+      "name": "AC Induction Motor 5kW",
+      "category": "motors",
+      "on_hand": 60,
+      "allocated": 18,
+      "reserved": 6,
+      "available": 36,
+      "reorder_point": 25,
+      "supplier_lead_time_days": 18,
+      "unit_cost": 1280.00
+    },
+    {
+      "sku": "ZM-3200",
+      "name": "Servo Motor Assembly 2.5kW",
+      "category": "motors",
+      "on_hand": 28,
+      "allocated": 8,
+      "reserved": 4,
+      "available": 16,
+      "reorder_point": 15,
+      "supplier_lead_time_days": 30,
+      "unit_cost": 3450.00
+    },
+    {
+      "sku": "ZM-3300",
+      "name": "BLDC Drive Motor 10kW",
+      "category": "motors",
+      "on_hand": 14,
+      "allocated": 7,
+      "reserved": 2,
+      "available": 5,
+      "reorder_point": 10,
+      "supplier_lead_time_days": 42,
+      "unit_cost": 5210.00
+    },
+    {
+      "sku": "ZV-1500",
+      "name": "Stainless Steel Ball Valve 2in",
+      "category": "valves",
+      "on_hand": 220,
+      "allocated": 40,
+      "reserved": 20,
+      "available": 160,
+      "reorder_point": 80,
+      "supplier_lead_time_days": 14,
+      "unit_cost": 185.00
+    },
+    {
+      "sku": "ZV-1600",
+      "name": "Pneumatic Actuated Butterfly Valve 4in",
+      "category": "valves",
+      "on_hand": 95,
+      "allocated": 22,
+      "reserved": 8,
+      "available": 65,
+      "reorder_point": 40,
+      "supplier_lead_time_days": 21,
+      "unit_cost": 480.00
+    },
+    {
+      "sku": "ZV-1700",
+      "name": "High-Pressure Relief Valve",
+      "category": "valves",
+      "on_hand": 48,
+      "allocated": 18,
+      "reserved": 6,
+      "available": 24,
+      "reorder_point": 30,
+      "supplier_lead_time_days": 28,
+      "unit_cost": 720.00
+    },
+    {
+      "sku": "ZS-0800",
+      "name": "Mechanical Seal Kit Type 21",
+      "category": "seals",
+      "on_hand": 340,
+      "allocated": 60,
+      "reserved": 20,
+      "available": 260,
+      "reorder_point": 150,
+      "supplier_lead_time_days": 10,
+      "unit_cost": 92.00
+    },
+    {
+      "sku": "ZS-0900",
+      "name": "Cartridge Seal Assembly",
+      "category": "seals",
+      "on_hand": 180,
+      "allocated": 35,
+      "reserved": 15,
+      "available": 130,
+      "reorder_point": 100,
+      "supplier_lead_time_days": 14,
+      "unit_cost": 215.00
+    },
+    {
+      "sku": "ZS-0950",
+      "name": "Double-Balanced Seal API 682",
+      "category": "seals",
+      "on_hand": 72,
+      "allocated": 20,
+      "reserved": 10,
+      "available": 42,
+      "reorder_point": 50,
+      "supplier_lead_time_days": 21,
+      "unit_cost": 410.00
+    }
+  ]
+}

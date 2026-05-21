@@ -27,3 +27,8 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests requiring real Azure credentials (deselect with -m 'not integration')",
+]

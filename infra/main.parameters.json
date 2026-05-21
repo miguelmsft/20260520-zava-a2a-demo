@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus2"
+    },
+    "foundryName": {
+      "value": "foundry-zava-demo"
+    },
+    "projectName": {
+      "value": "zava-project"
+    },
+    "deployerPrincipalType": {
+      "value": "User"
+    }
+  },
+  "_comments": {
+    "deployerPrincipalId": "REQUIRED — supply at deploy time, do NOT commit. Use one of: (a) az CLI: --parameters deployerPrincipalId=$(az ad signed-in-user show --query id -o tsv); (b) PowerShell: --parameters deployerPrincipalId=$Env:DEPLOYER_PRINCIPAL_ID; (c) deploy script (Step 14). For a service principal deployer, also override deployerPrincipalType to 'ServicePrincipal'."
+  }
+}
