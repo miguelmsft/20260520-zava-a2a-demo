@@ -29,6 +29,7 @@ where = ["."]
 include = ["app*"]
 
 [tool.pytest.ini_options]
+addopts = ["-m", "not integration"]
 markers = [
     "integration: marks tests requiring real Azure credentials (deselect with -m 'not integration')",
 ]
