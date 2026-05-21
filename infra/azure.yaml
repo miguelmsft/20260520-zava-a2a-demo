@@ -1,0 +1,19 @@
+# azd config — informational only.
+#
+# The supported deployment path for this demo is the PowerShell driver:
+#   scripts/verify-quota.ps1 → scripts/deploy-infra.ps1 →
+#   scripts/deploy-k8s.ps1 → scripts/setup-foundry-agent.ps1
+#
+# This azure.yaml exists so contributors familiar with `azd up` can experiment
+# with the Bicep template directly. The PowerShell scripts perform additional
+# steps that azd does not (quota pre-flight, TLS cert import into Key Vault,
+# AKS credential fetch, Foundry portal pause prompts), so they remain the
+# canonical entry point. See scripts/README.md.
+name: zava-a2a-demo
+metadata:
+  template: zava-a2a-demo@1.0.0
+services: {}
+infra:
+  provider: bicep
+  path: .
+  module: main
