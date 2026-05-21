@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zava-backend"
+version = "0.1.0"
+description = "Zava Smart Order Feasibility — FastAPI backend mediating between React UI and Foundry V2 agents"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "miguelmsft" }]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.46.0",
+    "azure-ai-projects>=2.1.0",
+    "azure-identity>=1.17.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.28.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

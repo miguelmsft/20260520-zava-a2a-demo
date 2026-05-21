@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zava-ops-agent"
+version = "0.1.0"
+description = "Zava Manufacturing Ops Agent — LangGraph + a2a-sdk on AKS, computes order feasibility from synthetic Zava data"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "miguelmsft" }]
+dependencies = [
+    "langgraph>=1.2.0",
+    "langchain-openai>=1.2.1",
+    "langchain-core>=1.4.0",
+    "a2a-sdk[http-server]>=1.0.3",
+    "azure-identity>=1.17.0",
+    "uvicorn>=0.46.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.28.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

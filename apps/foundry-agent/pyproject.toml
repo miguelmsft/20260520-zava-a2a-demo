@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zava-foundry-agent"
+version = "0.1.0"
+description = "Zava Foundry V2 Customer Service Agent setup — provisions the prompt agent, A2A connection, and Code Interpreter tool"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "miguelmsft" }]
+dependencies = [
+    "azure-ai-projects>=2.1.0",
+    "azure-identity>=1.17.0",
+]
+
+[tool.setuptools]
+# No package code yet — this project is a setup script collection (setup_agent.py in Step 11).
+py-modules = []
