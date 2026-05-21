@@ -64,12 +64,25 @@ param orchestratorDeploymentName string = 'gpt-55-orchestrator'
 @description('Deployment name for the worker (LangGraph Ops Agent on AKS).')
 param workerDeploymentName string = 'gpt-54mini-worker'
 
+// --- Step 6: AKS + ACR parameters ---
+
+@description('AKS cluster resource name.')
+param aksClusterName string = 'aks-zava-demo'
+
+@description('Globally-unique ACR name. Must be alphanumeric only, 5–50 chars. Defaults to a name derived from uniqueString(resourceGroup().id) to avoid collisions.')
+param acrName string = 'acrzavademo${uniqueString(resourceGroup().id)}'
+
 // -----------------------------------------------------------------------------
 // Constants — Built-in role definition GUIDs
 // -----------------------------------------------------------------------------
 // Foundry Account Owner: full management of the Foundry account and its projects.
 // GUID per research/2026-05-20-foundry-v2.md §4 (verified built-in role).
 var foundryAccountOwnerRoleId = 'e47c6f54-e4a2-4754-9501-8e0985b135e1'
+
+// AcrPull: read-only access to ACR images. Granted to the AKS kubelet identity
+// at the ACR scope so the cluster can pull container images without secrets.
+// GUID per research/2026-05-20-aks.md §3.2 + Azure built-in roles documentation.
+var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
 // -----------------------------------------------------------------------------
 // Modules
@@ -112,6 +125,30 @@ module appInsights 'modules/appinsights.bicep' = {
   }
 }
 
+// Step 6 — Azure Container Registry (Basic SKU, no admin user). Hosts the
+// LangGraph Ops Agent container image consumed by the AKS cluster below.
+module acr 'modules/acr.bicep' = {
+  name: 'acr-deploy'
+  params: {
+    location: location
+    acrName: acrName
+    tags: tags
+  }
+}
+
+// Step 6 — AKS cluster (Free tier, OIDC + Workload Identity + App Routing,
+// Container Insights via the Log Analytics workspace from Step 5).
+module aks 'modules/aks.bicep' = {
+  name: 'aks-deploy'
+  params: {
+    location: location
+    clusterName: aksClusterName
+    dnsPrefix: aksClusterName
+    logAnalyticsWorkspaceId: appInsights.outputs.logAnalyticsWorkspaceId
+    tags: tags
+  }
+}
+
 // -----------------------------------------------------------------------------
 // RBAC — grant the deployer 'Foundry Account Owner' on the Foundry account
 // -----------------------------------------------------------------------------
@@ -133,6 +170,38 @@ resource deployerFoundryOwner 'Microsoft.Authorization/roleAssignments@2022-04-0
     principalId: deployerPrincipalId
     principalType: deployerPrincipalType
     description: 'Foundry Account Owner for the demo deployer (granted by main.bicep Step 3).'
+  }
+}
+
+// -----------------------------------------------------------------------------
+// RBAC — grant the AKS kubelet (node) identity 'AcrPull' on the ACR
+// -----------------------------------------------------------------------------
+// Required so the cluster can pull container images from the registry without
+// any stored secret. Scoped to the ACR resource. The kubelet identity is a
+// system-assigned managed identity, hence principalType: ServicePrincipal.
+
+resource acrResource 'Microsoft.ContainerRegistry/registries@2024-11-01-preview' existing = {
+  name: acrName
+  dependsOn: [
+    acr
+  ]
+}
+
+resource aksResource 'Microsoft.ContainerService/managedClusters@2026-02-01' existing = {
+  name: aksClusterName
+  dependsOn: [
+    aks
+  ]
+}
+
+resource aksKubeletAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: acrResource
+  name: guid(acrResource.id, aksResource.id, acrPullRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    principalId: aks.outputs.kubeletIdentityObjectId
+    principalType: 'ServicePrincipal'
+    description: 'AcrPull for the AKS kubelet identity (granted by main.bicep Step 6).'
   }
 }
 
@@ -185,3 +254,17 @@ output logAnalyticsWorkspaceId string = appInsights.outputs.logAnalyticsWorkspac
 
 @description('Log Analytics workspace name.')
 output logAnalyticsName string = appInsights.outputs.logAnalyticsName
+
+// -- AKS + ACR outputs (Step 6) -----------------------------------------------
+
+@description('AKS cluster resource name.')
+output aksClusterName string = aks.outputs.clusterName
+
+@description('AKS OIDC issuer URL — consumed by Step 7 to create the federated identity credential for the LangGraph Ops Agent service account.')
+output aksOidcIssuerUrl string = aks.outputs.oidcIssuerUrl
+
+@description('Object ID of the AKS Application Routing (managed NGINX) add-on identity. Step 7 grants it Key Vault Certificate User + DNS Zone Contributor.')
+output aksWebAppRoutingIdentityObjectId string = aks.outputs.webAppRoutingIdentityObjectId
+
+@description('ACR login server hostname (e.g., myregistry.azurecr.io). Used by container build / push / pull and by the Kubernetes Deployment image reference.')
+output acrLoginServer string = acr.outputs.acrLoginServer
