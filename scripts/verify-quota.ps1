@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Verifies Azure prerequisites for the Zava A2A demo: model quota for gpt-5.5 +
-    gpt-5.4-mini, and AKS Standard_D2s_v5 SKU availability in the target region.
+    gpt-5.4-mini, and AKS Standard_D2s_v6 SKU availability in the target region.
 
 .DESCRIPTION
     Read-only Azure CLI script. Calls `az cognitiveservices usage list` to inspect
@@ -51,7 +51,7 @@ $ErrorActionPreference = 'Stop'
 # both demo deployments use Global Standard.
 $primaryUsageName  = 'OpenAI.GlobalStandard.gpt-5.5'
 $fallbackUsageName = 'OpenAI.GlobalStandard.gpt-5.4-mini'
-$aksNodeSku        = 'Standard_D2s_v5'
+$aksNodeSku        = 'Standard_D2s_v6'
 
 function Write-Section {
     param([string] $Title)

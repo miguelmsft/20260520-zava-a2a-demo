@@ -22,7 +22,7 @@
 //     so Step 7 can grant it Key Vault Certificate User + DNS Zone Contributor.
 //   - addonProfiles.omsagent — Container Insights, wired to the Log Analytics
 //     workspace from Step 5.
-//   - System node pool: 1 node default with autoscaler 1–2, Standard_D2s_v5
+//   - System node pool: 1 node default with autoscaler 1–2, Standard_D2s_v6
 //     (2 vCPU / 8 GiB), Linux, 30 GiB OS disk.
 //
 // kubernetesVersion: intentionally omitted — AKS picks the current N-1 default
@@ -93,7 +93,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2026-02-01' = {
         name: 'system'
         mode: 'System'
         osType: 'Linux'
-        vmSize: 'Standard_D2s_v5'
+        vmSize: 'Standard_D2s_v6'
         osDiskSizeGB: 30
         count: 1
         minCount: 1

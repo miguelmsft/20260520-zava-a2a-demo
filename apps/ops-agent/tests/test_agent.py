@@ -77,6 +77,58 @@ def test_tolerant_parse_missing_returns_none():
     assert out["customer_id"] is None
 
 
+def test_tolerant_parse_natural_language_full():
+    """The Foundry orchestrator forwards customer questions verbatim — the
+    parser must recognise SKU / qty / customer / date without explicit
+    `key=value` syntax.
+    """
+    from app.agent import _tolerant_parse
+
+    out = _tolerant_parse(
+        "Can we fulfill an order for 150 ZP-7000 centrifugal pumps "
+        "for CUST-001 by 2026-07-15?"
+    )
+    assert out == {
+        "sku": "ZP-7000",
+        "quantity": 150,
+        "target_date": "2026-07-15",
+        "customer_id": "CUST-001",
+    }
+
+
+def test_tolerant_parse_natural_language_qty_x_sku():
+    from app.agent import _tolerant_parse
+
+    out = _tolerant_parse(
+        "Need 25 MX-200 motors plus a quote, customer CUST-042, delivery "
+        "2026-09-01"
+    )
+    assert out["sku"] == "MX-200"
+    assert out["quantity"] == 25
+    assert out["customer_id"] == "CUST-042"
+    assert out["target_date"] == "2026-09-01"
+
+
+def test_tolerant_parse_orchestrator_no_separators():
+    """The Foundry orchestrator often rewrites the customer prompt into
+    pseudo-structured text WITHOUT colons, e.g.
+    ``"Check feasibility for SKU ZP-7000, quantity 150, customer CUST-001,
+       target date 2026-07-15."`` The parser must accept this form.
+    """
+    from app.agent import _tolerant_parse
+
+    out = _tolerant_parse(
+        "Check feasibility for SKU ZP-7000, quantity 150, customer "
+        "CUST-001, target date 2026-07-15."
+    )
+    assert out == {
+        "sku": "ZP-7000",
+        "quantity": 150,
+        "target_date": "2026-07-15",
+        "customer_id": "CUST-001",
+    }
+
+
 def test_tolerant_parse_empty_string():
     from app.agent import _tolerant_parse
 

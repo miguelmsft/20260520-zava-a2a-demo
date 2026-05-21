@@ -15,8 +15,10 @@
 //   - tenantId: subscription().tenantId — bound to the deployer's home tenant.
 //   - enableSoftDelete: true with retention 7 days (minimum allowed) — friendly
 //     for demo cleanup while still preserving the ARM property contract.
-//   - enablePurgeProtection: false — the demo is intended to be torn down and
-//     recreated; purge protection would block redeploys for 90 days.
+//   - enablePurgeProtection: true — required by many enterprise tenant policies.
+//     Note: this is IRREVERSIBLE; the vault and its name remain reserved for
+//     90 days after `az group delete`. Use a unique suffix per demo run if
+//     you intend to recreate within that window (see `keyVaultName` parameter).
 //
 // References:
 //   - plan.md §C Step 7
@@ -45,7 +47,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: 7
-    enablePurgeProtection: false
+    enablePurgeProtection: true
     publicNetworkAccess: 'Enabled'
   }
 }

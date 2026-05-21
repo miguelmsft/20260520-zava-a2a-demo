@@ -181,23 +181,29 @@ def _open_stream(request: ChatRequest):
     )
     # ``get_openai_client`` returns a fully-configured ``openai.OpenAI``
     # (not ``AzureOpenAI``) whose ``base_url`` and bearer-token auth target
-    # the Foundry project's ``/openai/v1`` endpoint. The Foundry SDK accepts
-    # OpenAI-client kwargs via ``**kwargs`` and forwards them to the
-    # ``openai.OpenAI`` constructor, which does NOT recognize ``api_version``.
-    # The supported override is ``default_query={"api-version": "..."}``,
-    # which the SDK merges into the OpenAI client's request query string.
-    # (Verified by inspecting ``azure.ai.projects._patch.get_openai_client``
-    # in azure-ai-projects 2.1.0.)
-    openai_client = project.get_openai_client(
-        default_query={"api-version": settings.foundry_openai_api_version},
-    )
+    # the Foundry project's ``/openai/v1`` endpoint.
+    #
+    # Foundry V2 GA rejects an explicit ``api-version`` query parameter on
+    # the ``/v1`` path (returns 400 "api-version query parameter is not
+    # allowed when using /v1 path"). Only pass it when the operator
+    # explicitly sets ``FOUNDRY_OPENAI_API_VERSION``; otherwise omit it and
+    # rely on the GA defaults.
+    if settings.foundry_openai_api_version:
+        openai_client = project.get_openai_client(
+            default_query={"api-version": settings.foundry_openai_api_version},
+        )
+    else:
+        openai_client = project.get_openai_client()
 
     create_kwargs: dict[str, Any] = {
-        "model": settings.foundry_agent_name,
+        "model": settings.foundry_orchestrator_deployment,
         "input": user_message,
         "stream": True,
         "extra_body": {
-            "agent_reference": {"name": settings.foundry_agent_name},
+            "agent_reference": {
+                "type": "agent_reference",
+                "name": settings.foundry_agent_name,
+            },
         },
     }
     if request.conversation_id:

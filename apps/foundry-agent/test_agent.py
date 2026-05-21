@@ -80,7 +80,16 @@ def _try_parse_json(value: Any) -> tuple[bool, Any]:
 def main(argv: Optional[list[str]] = None) -> int:  # noqa: ARG001
     project_endpoint = _require_env("FOUNDRY_PROJECT_ENDPOINT")
     agent_name = os.environ.get("FOUNDRY_AGENT_NAME", DEFAULT_AGENT_NAME)
-    api_version = os.environ.get("FOUNDRY_OPENAI_API_VERSION", DEFAULT_API_VERSION)
+    # When ``agent_reference`` is set, the ``model`` parameter on
+    # ``responses.create`` must match the agent's bound model deployment.
+    # Default to the orchestrator deployment created by Bicep.
+    orchestrator_deployment = os.environ.get(
+        "FOUNDRY_ORCHESTRATOR_DEPLOYMENT", "gpt-55-orchestrator"
+    )
+    # Foundry V2 GA rejects `api-version` on `/openai/v1/...`; the value is
+    # implicit. Override with FOUNDRY_OPENAI_API_VERSION=<value> only for
+    # Preview SDK fallbacks that still require it.
+    api_version = os.environ.get("FOUNDRY_OPENAI_API_VERSION")
 
     try:
         from azure.ai.projects import AIProjectClient
@@ -112,17 +121,27 @@ def main(argv: Optional[list[str]] = None) -> int:  # noqa: ARG001
             credential=DefaultAzureCredential(),
         ) as project:
             # The Foundry SDK returns a sync `openai.OpenAI` wired to the
-            # project's `/openai/v1/` endpoint. Pass api-version via
-            # default_query (see Step 12 implementation notes in plan.md).
-            openai_client = project.get_openai_client(
-                default_query={"api-version": api_version},
-            )
+            # project's `/openai/v1/` endpoint. The GA endpoint rejects an
+            # `api-version` query parameter; only pass it if the user
+            # explicitly opts in via FOUNDRY_OPENAI_API_VERSION (used by older
+            # Preview SDK builds).
+            if api_version:
+                openai_client = project.get_openai_client(
+                    default_query={"api-version": api_version},
+                )
+            else:
+                openai_client = project.get_openai_client()
 
             stream = openai_client.responses.create(
-                model=agent_name,
+                model=orchestrator_deployment,
                 input=SAMPLE_QUERY,
                 stream=True,
-                extra_body={"agent_reference": {"name": agent_name}},
+                extra_body={
+                    "agent_reference": {
+                        "type": "agent_reference",
+                        "name": agent_name,
+                    }
+                },
             )
 
             for event in stream:
@@ -143,7 +162,15 @@ def main(argv: Optional[list[str]] = None) -> int:  # noqa: ARG001
                     item = _get(event, "item", default=None)
                     item_type = _get(item, "type", default="") or ""
 
-                    if item_type == "remote_function_call":
+                    # GA emits `a2a_preview_call` / `a2a_preview_call_output`;
+                    # older Preview SDKs used `remote_function_call`. Accept
+                    # both so this test does not silently regress when the
+                    # naming changes.
+                    if item_type in {
+                        "remote_function_call",
+                        "a2a_preview_call",
+                        "a2a_preview_call_output",
+                    }:
                         saw_a2a_hop = True
                         call_id = _get(item, "call_id", "id", default="?")
                         label = _get(item, "label", "name", default="a2a")
@@ -169,6 +196,31 @@ def main(argv: Optional[list[str]] = None) -> int:  # noqa: ARG001
                         chart_file_ids.append(str(file_id))
                         print(f"\n[chart] file_id={file_id} item_type={item_type}")
                         continue
+
+                    # GA Code Interpreter often embeds the chart as a
+                    # `sandbox:/mnt/data/...png` markdown reference inside
+                    # the final assistant message rather than emitting a
+                    # standalone `image_file` item. Scan message content
+                    # parts for that pattern.
+                    if item_type == "message":
+                        content = _get(item, "content", default=None)
+                        if isinstance(content, list):
+                            for part in content:
+                                text_val = _get(part, "text", default=None)
+                                if isinstance(text_val, str) and (
+                                    "sandbox:" in text_val
+                                    or ".png" in text_val.lower()
+                                    or ".jpg" in text_val.lower()
+                                ):
+                                    saw_chart = True
+                                    chart_file_ids.append(
+                                        "embedded-sandbox-image"
+                                    )
+                                    print(
+                                        f"\n[chart] inline sandbox image in "
+                                        f"message text"
+                                    )
+                                    break
 
                     if item_type in {"tool_call", "code_interpreter_call"}:
                         name = _get(item, "name", default=item_type)
@@ -211,19 +263,36 @@ def main(argv: Optional[list[str]] = None) -> int:  # noqa: ARG001
     if a2a_payloads:
         parsed_ok_any = False
         has_score = False
+        # Helper that walks any nested dict / list / JSON-encoded-string
+        # structure looking for a `feasibility_score` field. The A2A SDK
+        # often wraps the tool's structured payload in a
+        # `{"content": [{"text": "<json>"}]}` envelope per the protocol.
+        def _walk_for_score(obj: Any, depth: int = 0) -> bool:
+            if depth > 6 or obj is None:
+                return False
+            ok, parsed = _try_parse_json(obj)
+            if not ok:
+                return False
+            if isinstance(parsed, dict):
+                if "feasibility_score" in parsed:
+                    return True
+                for v in parsed.values():
+                    if _walk_for_score(v, depth + 1):
+                        return True
+            elif isinstance(parsed, list):
+                for v in parsed:
+                    if _walk_for_score(v, depth + 1):
+                        return True
+            return False
+
         for payload in a2a_payloads:
-            ok, parsed = _try_parse_json(payload)
+            ok, _ = _try_parse_json(payload)
             if ok:
                 parsed_ok_any = True
-                if isinstance(parsed, dict) and "feasibility_score" in parsed:
-                    has_score = True
-                    break
-                # Sometimes the payload nests a `content` list of parts.
-                if isinstance(parsed, dict):
-                    for v in parsed.values():
-                        if isinstance(v, dict) and "feasibility_score" in v:
-                            has_score = True
-                            break
+            if _walk_for_score(payload):
+                has_score = True
+                break
+
         if not parsed_ok_any:
             r16_warning = (
                 "⚠ R16: A2A artifact arrived as opaque string, not structured "

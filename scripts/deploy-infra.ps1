@@ -99,7 +99,10 @@ param(
     [string] $CertificatePfxPath,
 
     [Parameter(Mandatory = $false)]
-    [System.Security.SecureString] $CertificatePfxPassword
+    [System.Security.SecureString] $CertificatePfxPassword,
+
+    [Parameter(Mandatory = $false)]
+    [switch] $NonInteractive
 )
 
 $ErrorActionPreference = 'Stop'
@@ -143,7 +146,7 @@ function Invoke-AzOrFail {
 Write-Section 'Zava A2A Demo — Infrastructure Deployment'
 Write-Host 'This script will CREATE Azure resources that incur cost.' -ForegroundColor Yellow
 Write-Host 'Estimated cost: ~$15-25/day for the demo footprint (AKS Free tier control plane,' -ForegroundColor Yellow
-Write-Host 'one Standard_D2s_v5 node, Basic ACR, Standard Key Vault, Log Analytics ingestion,' -ForegroundColor Yellow
+Write-Host 'one Standard_D2s_v6 node, Basic ACR, Standard Key Vault, Log Analytics ingestion,' -ForegroundColor Yellow
 Write-Host 'and pay-as-you-go Azure OpenAI tokens).' -ForegroundColor Yellow
 Write-Host ''
 Write-Host ("  Resource group : {0}" -f $ResourceGroupName)
@@ -151,7 +154,12 @@ Write-Host ("  Location       : {0}" -f $Location)
 Write-Host ("  useGpt55       : {0}" -f ([bool]$UseGpt55))
 Write-Host ("  DNS zone       : {0}" -f $DnsZoneName)
 Write-Host ''
-Read-Host 'Press Enter to continue or Ctrl+C to cancel' | Out-Null
+if (-not $NonInteractive) {
+    Read-Host 'Press Enter to continue or Ctrl+C to cancel' | Out-Null
+}
+else {
+    Write-Host '⚠ -NonInteractive set; skipping confirmation prompt.' -ForegroundColor Yellow
+}
 
 # -----------------------------------------------------------------------------
 # 2. Pre-flight: quota check
@@ -325,28 +333,42 @@ if ($CertificatePfxPath) {
     }
 }
 else {
-    Write-Host 'No -CertificatePfxPath supplied. Provision the TLS cert manually using ONE of:' -ForegroundColor Yellow
-    Write-Host ''
-    Write-Host '  (a) Import an existing CA-issued PFX into Key Vault:'
-    Write-Host "      az keyvault certificate import \"
-    Write-Host "        --vault-name $kvName \"
-    Write-Host "        --name tls-cert-ops-agent \"
-    Write-Host "        --file <path-to-pfx> \"
-    Write-Host "        --password <pfx-password>"
-    Write-Host ''
-    Write-Host '  (b) Use Key Vault''s CA integration (DigiCert / GlobalSign):'
-    Write-Host "      Azure portal → Key Vault $kvName → Certificates → Generate/Import →"
-    Write-Host "      Method: 'Generate', Issuer: DigiCert or GlobalSign, Subject CN: $certHost,"
-    Write-Host "        Certificate name: tls-cert-ops-agent."
-    Write-Host '      (Requires an active CA account configured under Certificate Authorities.)'
-    Write-Host ''
-    Write-Host '  (c) cert-manager + Let''s Encrypt (deferred — see docs/how-to-demo.md):'
-    Write-Host "      Install cert-manager into the cluster, define a ClusterIssuer for ACME HTTP-01,"
-    Write-Host "      and let cert-manager issue and rotate the cert. The Ingress annotation in Step 10"
-    Write-Host "      points to Key Vault, so this path also requires uploading the issued cert to KV."
-    Write-Host ''
-    Write-Host "After the cert exists in Key Vault as 'tls-cert-ops-agent', press Enter to continue." -ForegroundColor Yellow
-    Read-Host -Prompt 'Press Enter when the certificate is imported and visible in Key Vault' | Out-Null
+    # If the cert already exists in Key Vault (e.g., imported manually before
+    # this run), skip the interactive prompt entirely. This keeps re-runs
+    # idempotent and supports -NonInteractive automation.
+    $existingCertJson = az keyvault certificate show --vault-name $kvName --name tls-cert-ops-agent --output json 2>$null
+    if ($LASTEXITCODE -eq 0 -and $existingCertJson) {
+        Write-Host "✓ Certificate 'tls-cert-ops-agent' already exists in Key Vault $kvName; skipping import prompt." -ForegroundColor Green
+    }
+    else {
+        Write-Host 'No -CertificatePfxPath supplied. Provision the TLS cert manually using ONE of:' -ForegroundColor Yellow
+        Write-Host ''
+        Write-Host '  (a) Import an existing CA-issued PFX into Key Vault:'
+        Write-Host "      az keyvault certificate import \"
+        Write-Host "        --vault-name $kvName \"
+        Write-Host "        --name tls-cert-ops-agent \"
+        Write-Host "        --file <path-to-pfx> \"
+        Write-Host "        --password <pfx-password>"
+        Write-Host ''
+        Write-Host '  (b) Use Key Vault''s CA integration (DigiCert / GlobalSign):'
+        Write-Host "      Azure portal → Key Vault $kvName → Certificates → Generate/Import →"
+        Write-Host "      Method: 'Generate', Issuer: DigiCert or GlobalSign, Subject CN: $certHost,"
+        Write-Host "        Certificate name: tls-cert-ops-agent."
+        Write-Host '      (Requires an active CA account configured under Certificate Authorities.)'
+        Write-Host ''
+        Write-Host '  (c) cert-manager + Let''s Encrypt (deferred — see docs/how-to-demo.md):'
+        Write-Host "      Install cert-manager into the cluster, define a ClusterIssuer for ACME HTTP-01,"
+        Write-Host "      and let cert-manager issue and rotate the cert. The Ingress annotation in Step 10"
+        Write-Host "      points to Key Vault, so this path also requires uploading the issued cert to KV."
+        Write-Host ''
+        if ($NonInteractive) {
+            Write-Host "❌ -NonInteractive set but no certificate found in Key Vault $kvName as 'tls-cert-ops-agent'." -ForegroundColor Red
+            Write-Host "  Import a cert (option (a) above) before re-running, OR drop -NonInteractive." -ForegroundColor Red
+            exit 1
+        }
+        Write-Host "After the cert exists in Key Vault as 'tls-cert-ops-agent', press Enter to continue." -ForegroundColor Yellow
+        Read-Host -Prompt 'Press Enter when the certificate is imported and visible in Key Vault' | Out-Null
+    }
 }
 
 # -----------------------------------------------------------------------------

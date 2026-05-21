@@ -359,10 +359,11 @@ function Invoke-ManifestRender {
     }
 
     # Detect any leftover `${...}` placeholders so a missing parameter doesn't
-    # silently slip through to kubectl.
-    $leftover = [regex]::Matches($content, '\$\{[A-Z_][A-Z0-9_]*\}') |
+    # silently slip through to kubectl. Wrap in @() so `.Count` works under
+    # StrictMode even when there's only 0 or 1 match.
+    $leftover = @([regex]::Matches($content, '\$\{[A-Z_][A-Z0-9_]*\}') |
         ForEach-Object { $_.Value } |
-        Select-Object -Unique
+        Select-Object -Unique)
     if ($leftover.Count -gt 0) {
         Write-Host ("❌ Unresolved placeholders in {0}: {1}" -f (Split-Path -Leaf $SrcPath), ($leftover -join ', ')) -ForegroundColor Red
         Invoke-Cleanup

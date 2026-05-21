@@ -160,13 +160,30 @@ def get_model_with_tools():  # pragma: no cover
 # ---------------------------------------------------------------------------
 
 
-_SKU_RE = re.compile(r"(?i)\bsku\s*[:=]\s*\"?([A-Za-z0-9][\w-]*)\"?")
-_QTY_RE = re.compile(r"(?i)\b(?:quantity|qty|units?)\s*[:=]\s*\"?(\d+)\"?")
+_SKU_RE = re.compile(r"(?i)\bsku\s*[:=]?\s*\"?([A-Za-z]{2}-\d{2,5})\"?")
+_QTY_RE = re.compile(r"(?i)\b(?:quantity|qty|units?)\s*[:=]?\s*\"?(\d+)\"?")
 _DATE_RE = re.compile(
-    r"(?i)\b(?:target_date|target|deliver(?:y)?_date|by|date)\s*[:=]?\s*\"?(\d{4}-\d{2}-\d{2})\"?"
+    r"(?i)\b(?:target_date|target\s+date|target|deliver(?:y)?_date|by|date)\s*[:=]?\s*\"?(\d{4}-\d{2}-\d{2})\"?"
 )
 _CUST_RE = re.compile(
-    r"(?i)\bcustomer(?:_id)?\s*[:=]\s*\"?(CUST-[A-Za-z0-9-]+)\"?"
+    r"(?i)\bcustomer(?:_id)?\s*[:=]?\s*\"?(CUST-[A-Za-z0-9-]+)\"?"
+)
+
+# Natural-language fallback patterns. The orchestrator agent often forwards
+# the customer's free-form question (e.g. "Can we fulfill 150 ZP-7000 pumps
+# for CUST-001 by 2026-07-15?") without rewriting it into key=value form.
+# These secondary patterns recognise the canonical Zava entity shapes:
+#   - SKU: 2 letters + dash + 3-4 digits (matches ZP-7000, MX-200, VL-500,
+#     SX-100, etc.)
+#   - Standalone CUST-XXX (no "customer:" prefix)
+#   - "N <SKU>" or "<SKU> x N" quantity-near-SKU
+#   - Any ISO date in the text
+_NL_SKU_RE = re.compile(r"\b([A-Z]{2}-\d{2,5})\b")
+_NL_CUST_RE = re.compile(r"\b(CUST-[A-Za-z0-9-]+)\b")
+_NL_DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+_NL_QTY_NEAR_SKU_RE = re.compile(
+    r"\b(\d{1,7})\s+(?:units?\s+of\s+)?(?:[\w-]*\s+){0,4}?(?=[A-Z]{2}-\d{2,5})|"
+    r"\b(?:[A-Z]{2}-\d{2,5})\s*(?:x|×)\s*(\d{1,7})\b"
 )
 
 
@@ -177,6 +194,8 @@ def _tolerant_parse(text: str) -> dict[str, Any]:
       * "SKU=ZP-7000, quantity=10, target_date=2026-08-15, customer_id=CUST-001"
       * "sku: ZP-7000  qty: 10  target: 2026-08-15  customer: CUST-001"
       * "Check feasibility of 10 ZP-7000 by 2026-08-15 for CUST-001"
+      * "Can we fulfill an order for 150 ZP-7000 centrifugal pumps for
+         CUST-001 by 2026-07-15?"
     Missing fields come back as None so the compute step can produce an
     explicit "input missing" failure artifact rather than silently defaulting.
     """
@@ -186,11 +205,38 @@ def _tolerant_parse(text: str) -> dict[str, Any]:
     qty_m = _QTY_RE.search(text)
     date_m = _DATE_RE.search(text)
     cust_m = _CUST_RE.search(text)
+
+    sku = sku_m.group(1) if sku_m else None
+    quantity = int(qty_m.group(1)) if qty_m else None
+    target_date = date_m.group(1) if date_m else None
+    customer_id = cust_m.group(1) if cust_m else None
+
+    # Natural-language fallbacks. Only fill fields that the explicit
+    # key=value pass missed, so structured callers still take precedence.
+    if sku is None:
+        nl_sku = _NL_SKU_RE.search(text)
+        if nl_sku:
+            sku = nl_sku.group(1)
+    if customer_id is None:
+        nl_cust = _NL_CUST_RE.search(text)
+        if nl_cust:
+            customer_id = nl_cust.group(1)
+    if target_date is None:
+        nl_date = _NL_DATE_RE.search(text)
+        if nl_date:
+            target_date = nl_date.group(1)
+    if quantity is None:
+        nl_qty = _NL_QTY_NEAR_SKU_RE.search(text)
+        if nl_qty:
+            qty_str = nl_qty.group(1) or nl_qty.group(2)
+            if qty_str:
+                quantity = int(qty_str)
+
     return {
-        "sku": sku_m.group(1) if sku_m else None,
-        "quantity": int(qty_m.group(1)) if qty_m else None,
-        "target_date": date_m.group(1) if date_m else None,
-        "customer_id": cust_m.group(1) if cust_m else None,
+        "sku": sku,
+        "quantity": quantity,
+        "target_date": target_date,
+        "customer_id": customer_id,
     }
 
 
@@ -225,11 +271,17 @@ def parse_request(state: AgentState) -> dict[str, Any]:
     user_text = _extract_user_text(state["messages"])
     parsed = _tolerant_parse(user_text)
     missing = [k for k, v in parsed.items() if v is None]
+    # Log the raw inbound text (truncated) so we can see exactly what the
+    # orchestrator forwarded — useful when parser misses are due to the
+    # caller rewriting the user's prompt before forwarding.
+    snippet = (user_text or "").replace("\n", " ")[:240]
     if missing:
         parsed["parse_error"] = (
             "Missing required request field(s): " + ", ".join(missing)
         )
-        logger.info("ops-agent.parse_request: missing=%s", missing)
+        logger.info(
+            "ops-agent.parse_request: missing=%s user_text=%r", missing, snippet
+        )
     else:
         logger.info(
             "ops-agent.parse_request: sku=%s qty=%s date=%s customer=%s",
