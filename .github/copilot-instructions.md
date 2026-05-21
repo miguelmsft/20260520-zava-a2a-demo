@@ -20,6 +20,10 @@ The two agents communicate via **A2A**. The React UI shows each A2A hop and each
 - **Bar:** Production-quality clarity. Code must be readable; architecture must be defensible; documentation must be explicit.
 - **Timeline:** No rush. Prioritize correctness and review depth over speed.
 
+## Execution mode
+
+- **Autopilot through Phase 7** is approved. The orchestrator should proceed end-to-end without pausing at scheduled checkpoints **unless** there is a genuine blocker it cannot resolve (e.g., A2A not supported on Foundry Agents V2; no acceptable model available in any US region; hard deployment failure after retries; quota that cannot be raised). All doer-reviewer round limits (5) still apply.
+
 ## Documentation is a first-class deliverable
 
 The demo must ship with clear, easy-to-understand Markdown documentation. At minimum:
@@ -47,7 +51,7 @@ Other docs may be added as the plan dictates.
 - **Inter-agent communication:** **A2A protocol** (open Agent-to-Agent protocol).
 - **Frontend:** **React** (runs locally for the demo).
 - **Backend:** light backend (runs locally) that mediates between the React UI and the agents.
-- **Models:** **GPT-5.4-mini** primary, **GPT-5.5-mini** fallback. **Global deployment** is acceptable. Each agent uses a **different model deployment** (two separate deployments).
+- **Models:** Any of **GPT-5.5**, **GPT-5.4**, **GPT-5.5-mini**, **GPT-5.4-mini** is acceptable, **provided each model supports A2A on Foundry Agents V2** (research must verify per-model). Preference: **GPT-5.5** or **GPT-5.4-mini** if all support A2A. **Global deployment** is acceptable. Each agent uses a **different model deployment** (two separate deployments).
 - **Networking for the demo:** **simple — public endpoints** (with sensible auth). Private VNet architecture is documented but NOT implemented in this build.
 - **Company:** Zava (manufacturing — precision components).
 - **Repo visibility:** **Public** GitHub repo under `miguelmsft`.
@@ -63,7 +67,7 @@ Other docs may be added as the plan dictates.
 ## Region & availability rules
 
 - **Prefer US regions:** East US, East US 2, West US, West US 2, West US 3.
-- Research must verify that **GPT-5.4-mini** (primary) and **GPT-5.5-mini** (fallback) are available as **global deployments** in Foundry V2 in the chosen region. If neither is available, escalate to the user with the next-best option (e.g., GPT-5-mini, GPT-4o-mini).
+- Research must verify which of **GPT-5.5**, **GPT-5.4**, **GPT-5.5-mini**, **GPT-5.4-mini** are available as **global deployments** in Foundry V2 and **which of them support A2A on Foundry Agents V2**. Final model choice is locked in during planning based on research findings — prefer GPT-5.5 or GPT-5.4-mini.
 - All other services (Foundry, AKS, networking) must be available in the same region.
 
 ## RBAC requirements

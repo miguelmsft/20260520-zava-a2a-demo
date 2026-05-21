@@ -55,3 +55,7 @@ htmlcov/
 
 # Deployment outputs (may contain endpoints; safe-ish but generated)
 .deployment-outputs.json
+
+# Researcher temporary cache files
+*.html
+
