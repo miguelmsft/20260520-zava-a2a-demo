@@ -694,13 +694,21 @@ production.
   load balancer — is fully designed in
   [`docs/private-vnet-considerations.md`](./private-vnet-considerations.md)
   but not implemented in this build.
-- **Portal-created A2A connection on the Foundry side.** As of the
-  current Foundry V2 Preview the `A2APreviewTool` connection cannot be
-  created reliably via SDK — see
-  [`apps/foundry-agent/create_a2a_connection.py`](../apps/foundry-agent/create_a2a_connection.py),
-  which attempts an SDK fallback but expects it to fail. When the SDK
-  path stabilizes, the script will succeed and the manual portal step
-  goes away with no other code change.
+- **Portal-created A2A connection on the Foundry side** — **superseded as of 2026-05-21**. As of GA, the Foundry data-plane Python SDK
+  (`azure-ai-projects` 2.1.x) still does not expose
+  `project.connections.create(...)`. **However**, we discovered that the
+  management plane (ARM) accepts the same operation as a direct REST
+  `PUT` against
+  `Microsoft.CognitiveServices/accounts/{a}/projects/{p}/connections/{name}`
+  at API version `2025-06-01`, with `category=CustomKeys` and
+  `metadata.a2a_subtype=agent`. The A2APreviewTool happily consumes the
+  resulting connection.
+  [`apps/foundry-agent/create_a2a_connection.py`](../apps/foundry-agent/create_a2a_connection.py)
+  now tries that ARM REST PUT first, falls back to the SDK call (still
+  expected to fail), and finally prints portal instructions only if both
+  automated paths fail. See [`docs/deployment-learnings.md`](./deployment-learnings.md)
+  §3 for the full ARM payload and the RBAC requirement (`Cognitive
+  Services Contributor` or higher on the Foundry account).
 - **No A2A push-notification config.** Long-running tasks on the ops
   agent could in principle deliver completion via webhook (research
   §3 push-notification mechanism). The current `message/send` synchronous

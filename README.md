@@ -108,8 +108,8 @@ Full step-by-step instructions live in **[`docs/how-to-demo.md`](docs/how-to-dem
 
 - **Azure subscription** where you are **Owner** (or Contributor + User Access Administrator). Workload-identity role assignments require `Microsoft.Authorization/roleAssignments/write`.
 - **Foundry quota** in a US region (East US, East US 2, West US, West US 2, or West US 3). Tier 5+ for `gpt-5.5`; Tier 1–4 will transparently fall back to `gpt-5.4-mini`.
-- **Owned DNS zone** where you can delegate a subdomain (e.g. `zava.example.com`) — required for the Ops Agent's public HTTPS endpoint.
-- **TLS certificate** with CN/SAN matching `ops-agent.<your-domain>` (PFX file is simplest; Let's Encrypt works).
+- **(Optional) Owned DNS zone** where you can delegate a subdomain (e.g. `zava.example.com`). For a fast demo, you can skip this and use the free public [`sslip.io`](https://sslip.io) wildcard DNS service against the AKS Ingress IP — see [`docs/deployment-learnings.md`](docs/deployment-learnings.md) §1.
+- **(Optional) TLS certificate** matching the public hostname. For an internal demo, plain HTTP between Foundry and the Ops Agent is sufficient (Foundry's A2A tool accepts `http://...` targets). For a customer-facing demo, issue a Let's Encrypt cert against the sslip.io name via cert-manager.
 - **Local tools:** Azure CLI 2.60+, **PowerShell 7+**, `kubectl` 1.30+, **Python 3.13**, **Node 22 / npm 10**. Docker is **optional** (the recommended path uses `az acr build`).
 
 ### Quickstart
@@ -138,6 +138,8 @@ az account set --subscription "<subscription-id>"
 # 5. Create the Foundry V2 Customer Service Agent and wire the A2A connection
 ./scripts/setup-foundry-agent.ps1
 ```
+
+> **Note (Foundry V2 GA quirks):** the A2A connection is created automatically by step 5 via ARM REST PUT (data-plane SDK gap — see [`docs/deployment-learnings.md`](docs/deployment-learnings.md) §3). The Customer Service Agent's `responses.create` requires `model=<deployment name>` (`FOUNDRY_ORCHESTRATOR_DEPLOYMENT` env var, default `gpt-55-orchestrator`) and is incompatible with the older `api-version` query parameter — both are handled automatically by the shipped code.
 
 Then start the local apps in two terminals:
 
@@ -212,6 +214,7 @@ All documentation lives in [`docs/`](docs/):
 - **[`docs/architecture.md`](docs/architecture.md)** — Azure resource inventory, RBAC matrix, network flow, K8s objects, failure modes, cost envelope, scaling vectors.
 - **[`docs/private-vnet-considerations.md`](docs/private-vnet-considerations.md)** — What it would take to run this on a private VNet: what Foundry V2 + A2A supports today, gaps, and a hardened-architecture sketch.
 - **[`docs/how-to-demo.md`](docs/how-to-demo.md)** — Full presenter / customer demo runbook with prerequisites, deploy steps, demo script, and cleanup.
+- **[`docs/deployment-learnings.md`](docs/deployment-learnings.md)** — **NEW**: As-deployed notes from a successful end-to-end run, including Foundry V2 GA quirks (`api-version` rejection, `agent_reference.type`, model-binding rules), the ARM REST workaround for A2A connections, and the sslip.io / HTTP demo path.
 
 For working context and design decisions, see [`plan.md`](plan.md) (the full implementation plan) and [`.github/copilot-instructions.md`](.github/copilot-instructions.md) (project specification).
 

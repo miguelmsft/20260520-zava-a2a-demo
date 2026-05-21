@@ -105,16 +105,31 @@ def _classify_event(event: Any) -> AgentEvent:
         item_type = _safe_getattr(item, "type", default="") or ""
         status = "started" if event_type.endswith("added") else "completed"
 
-        # A2A invocation — Foundry surfaces these as ``remote_function_call``
-        # output items when the agent calls another agent via A2APreviewTool.
-        if item_type == "remote_function_call":
+        # A2A invocation — Foundry GA emits ``a2a_preview_call`` (input) and
+        # ``a2a_preview_call_output`` (response) output items when the agent
+        # delegates to another agent via A2APreviewTool. Older Preview SDK
+        # builds used ``remote_function_call`` — accept both so the demo
+        # works against either flavor.
+        if item_type in {
+            "remote_function_call",
+            "a2a_preview_call",
+            "a2a_preview_call_output",
+        }:
+            # Pull the structured tool output when present (input items do
+            # not carry it; output items do). The A2A SDK typically wraps
+            # the worker's reply in an ``output``/``content`` list.
+            output_payload = _safe_getattr(
+                item, "output", "result", "response", "content", default=None,
+            )
             return AgentEvent(
                 type="a2a_hop",
                 data={
                     "tool": _safe_getattr(item, "name", "label", default="a2a"),
                     "call_id": _safe_getattr(item, "id", "call_id", default=""),
                     "status": status,
+                    "kind": item_type,
                     "arguments": _safe_getattr(item, "arguments", default=None),
+                    "output": output_payload,
                 },
             )
 
@@ -140,6 +155,36 @@ def _classify_event(event: Any) -> AgentEvent:
                     "data_b64": _safe_getattr(item, "data_b64", "b64_json", default=None),
                 },
             )
+
+        # Final assistant message — Foundry GA's Code Interpreter typically
+        # embeds the chart as a ``sandbox:/mnt/data/...png`` markdown
+        # reference inside the message text rather than emitting a separate
+        # ``image_file`` output item. Detect that and surface it as a chart
+        # event so the React frontend can render a placeholder.
+        if item_type == "message" and event_type.endswith("done"):
+            content = _safe_getattr(item, "content", default=None)
+            text_blob = ""
+            if isinstance(content, list):
+                for part in content:
+                    part_text = _safe_getattr(part, "text", default=None)
+                    if isinstance(part_text, str):
+                        text_blob += part_text + "\n"
+            elif isinstance(content, str):
+                text_blob = content
+            if text_blob and (
+                "sandbox:" in text_blob
+                or ".png" in text_blob.lower()
+                or ".jpg" in text_blob.lower()
+            ):
+                return AgentEvent(
+                    type="chart",
+                    data={
+                        "mime_type": "image/png",
+                        "file_id": "",
+                        "url": None,
+                        "sandbox_reference": True,
+                    },
+                )
 
         # Unknown item kind — surface as status for debugging.
         return AgentEvent(

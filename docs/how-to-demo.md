@@ -23,6 +23,8 @@ This demo shows two AI agents collaborating over the open **A2A (Agent-to-Agent)
 
 For the use-case narrative, see [`docs/use-case.md`](./use-case.md). For the deployed architecture, see [`docs/architecture.md`](./architecture.md). For implementation details, see [`docs/technology.md`](./technology.md).
 
+> **⚡ If you just want the demo to run** — and you do not own a DNS zone or have a TLS certificate — read [`docs/deployment-learnings.md`](./deployment-learnings.md) first. It documents the validated as-deployed path (sslip.io DNS + HTTP-only A2A target + ARM REST connection creation) and adds about 5 minutes total versus the full DNS/TLS path described below.
+
 ---
 
 ## 2. Prerequisites
@@ -283,6 +285,12 @@ Reference: [`docs/architecture.md`](./architecture.md) for the deployed componen
 | KQL fallback returns 0 rows after 10 minutes | App Insights → Foundry linkage broken, or wrong workspace targeted | In the Foundry portal, re-do **Connected resources → App Insights**; confirm the resource ID matches `appInsightsName` from 4.3; toggle **Tracing OFF/ON**. |
 | Backend `/api/chat` returns 401 or 404 | `FOUNDRY_AGENT_NAME` env var doesn’t match the agent reference name set in `setup_agent.py`, or `DefaultAzureCredential` picked the wrong tenant | Confirm `$env:FOUNDRY_AGENT_NAME -eq "zava-customer-service"`; run `az account show` and re-`az login` if the tenant is wrong. |
 | Frontend shows CORS error in dev tools | Backend not running on port 8000, or Vite proxy mis-pointed | Confirm `uvicorn` is listening on 8000 (section 5.1); restart `npm run dev` to reload the Vite proxy config. |
+| `BadRequestError: api-version query parameter is not allowed when using /v1 path` | Foundry V2 GA rejects this param on `/openai/v1/...` | Unset `FOUNDRY_OPENAI_API_VERSION` in your env. The shipped code defaults to empty; see [`docs/deployment-learnings.md`](./deployment-learnings.md) §2.1. |
+| `invalid_payload: Model must match the agent's model 'gpt-55-orchestrator'` | `responses.create(model=...)` was passed the agent name instead of the bound deployment | Set `FOUNDRY_ORCHESTRATOR_DEPLOYMENT=gpt-55-orchestrator` (or whatever the deployment is called). See [`docs/deployment-learnings.md`](./deployment-learnings.md) §2.3. |
+| `invalid_payload: required: Required properties ["type"] are not present` on `/agent_reference` | GA requires `type: "agent_reference"` alongside `name` | Update your call site; the shipped backend and `test_agent.py` already include it. |
+| AKS health probes/ingress unreachable after a day idle | AKS auto-stopped | `az aks start --name aks-zava-demo --resource-group rg-zava-demo` then `kubectl rollout restart deployment/ops-agent`. See [`docs/deployment-learnings.md`](./deployment-learnings.md) §5.5. |
+| `429 Too Many Requests` during a second demo run | Default 10K TPM is too low for repeated runs | Scale both deployments to capacity 50 via `az cognitiveservices account deployment create --sku-capacity 50` (idempotent upsert). See [`docs/deployment-learnings.md`](./deployment-learnings.md) §5.4. |
+| `AttributeError: 'ConnectionsOperations' object has no attribute 'create'` | Data-plane SDK gap; `connections.create` does not exist | Use ARM REST PUT instead — `create_a2a_connection.py` now does this automatically. See [`docs/deployment-learnings.md`](./deployment-learnings.md) §3. |
 
 ---
 
@@ -317,4 +325,5 @@ If your test_agent.py runs left orphan agents or A2A connections you want gone b
 - [`docs/technology.md`](./technology.md) — the implementation details (Foundry V2 + LangGraph + React + FastAPI).
 - [`docs/a2a-implementation.md`](./a2a-implementation.md) — A2A protocol deep-dive: wire format, auth, dual-part artifact pattern, version interop.
 - [`docs/private-vnet-considerations.md`](./private-vnet-considerations.md) — guidance for hardened / private-VNet deployments.
+- [`docs/deployment-learnings.md`](./deployment-learnings.md) — **NEW**: As-deployed notes and GA-specific workarounds from a successful end-to-end run.
 - [`plan.md`](../plan.md) §F.1 — gating risks (DNS delegation, TLS cert, gpt-5.5 quota).
