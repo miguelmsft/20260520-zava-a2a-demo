@@ -1,0 +1,32 @@
+# Ingress for the Ops Agent, terminated at the AKS Application Routing add-on.
+#
+# TLS:
+#   The `kubernetes.azure.com/tls-cert-keyvault-uri` annotation tells App Routing
+#   to fetch the certificate from Key Vault and synthesize a Kubernetes Secret
+#   into this namespace. Per aks.md §4.4, the resulting Secret is named
+#   `keyvault-<ingress-metadata-name>` — so for ingress `ops-agent-ingress` the
+#   secretName MUST be `keyvault-ops-agent-ingress`.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ops-agent-ingress
+  namespace: default
+  annotations:
+    kubernetes.azure.com/tls-cert-keyvault-uri: "https://${KV_NAME}.vault.azure.net/certificates/tls-cert-ops-agent"
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  tls:
+    - hosts:
+        - "ops-agent.${DNS_ZONE}"
+      secretName: keyvault-ops-agent-ingress
+  rules:
+    - host: "ops-agent.${DNS_ZONE}"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ops-agent-svc
+                port:
+                  number: 9000

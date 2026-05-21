@@ -13,8 +13,15 @@ authors = [{ name = "miguelmsft" }]
 dependencies = [
     "azure-ai-projects>=2.1.0",
     "azure-identity>=1.17.0",
+    "openai>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
 ]
 
 [tool.setuptools]
-# No package code yet — this project is a setup script collection (setup_agent.py in Step 11).
+# Setup-script collection (Step 11). `__init__.py` exists so the directory
+# is importable for tooling, but no library modules are exposed.
 py-modules = []

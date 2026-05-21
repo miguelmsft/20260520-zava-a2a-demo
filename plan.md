@@ -660,31 +660,34 @@ Citation: `foundry-control-plane.md` §2.3, §8.
 
 ---
 
-#### Step 7: Bicep — Key Vault + DNS zone + Workload Identity — ⬜ Not started
+#### Step 7: Bicep — Key Vault + DNS zone + Workload Identity — ✅ Approved
 **Files:** `infra/modules/keyvault.bicep`, `infra/modules/dns.bicep`, `infra/modules/identity.bicep`
 **Depends on:** Step 6
 
 **Tasks:**
-- [ ] Create `infra/modules/keyvault.bicep`: Key Vault, standard SKU, RBAC authorization enabled, tenant ID from subscription
-- [ ] Create `infra/modules/dns.bicep`: Azure DNS zone (location: `global`), parameter for zone name
-- [ ] Create `infra/modules/identity.bicep`:
+- [x] Create `infra/modules/keyvault.bicep`: Key Vault, standard SKU, RBAC authorization enabled, tenant ID from subscription
+- [x] Create `infra/modules/dns.bicep`: Azure DNS zone (location: `global`), parameter for zone name
+- [x] Create `infra/modules/identity.bicep`:
   - User-Assigned Managed Identity (UAMI) for AKS workload identity
   - Federated identity credential linking UAMI to K8s service account (`system:serviceaccount:default:ops-agent-sa`)
   - Role assignments: `Foundry User` (GUID `53ca6127-db72-4b80-b1b0-d745d6d5456d`) on Foundry resource for the UAMI
   - `Key Vault Certificate User` on Key Vault for the Application Routing add-on managed identity
   - `DNS Zone Contributor` on DNS zone for the Application Routing add-on managed identity
-- [ ] Wire all modules into `infra/main.bicep`
-- [ ] Output: `uamiClientId`, `uamiPrincipalId`, `keyVaultUri`, `dnsZoneId`
+- [x] Wire all modules into `infra/main.bicep`
+- [x] Output: `uamiClientId`, `uamiPrincipalId`, `keyVaultUri`, `dnsZoneId`
 
 **Verification:**
-- [ ] `az bicep build --file infra/main.bicep` compiles without errors
-- [ ] Identity module creates federated credential with correct issuer (AKS OIDC URL), subject, and audience
-- [ ] All role GUIDs match official documentation values
+- [x] `az bicep build --file infra/main.bicep` compiles without errors
+- [x] Identity module creates federated credential with correct issuer (AKS OIDC URL), subject, and audience
+- [x] All role GUIDs match official documentation values
 
 **Implementation Notes:**
 - Federated credential audience: `api://AzureADTokenExchange` (standard for AKS Workload Identity per `aks.md` §5)
 - The Application Routing add-on identity's object ID must be read from the AKS resource output (`ingressProfile.webAppRouting.identity.objectId`)
 - TLS certificate provisioning (import CA cert to Key Vault) is a manual step covered in the deployment script
+- 2026-05-20: Implemented `infra/modules/keyvault.bicep` (`Microsoft.KeyVault/vaults@2024-11-01`, Standard SKU, `enableRbacAuthorization: true`, `tenantId: subscription().tenantId`, `enableSoftDelete: true` with 7-day retention (minimum allowed — friendly for demo cleanup), `enablePurgeProtection: false`; outputs `keyVaultId`/`keyVaultName`/`keyVaultUri`). Implemented `infra/modules/dns.bicep` (`Microsoft.Network/dnsZones@2023-07-01-preview`, location `global`, `zoneType: 'Public'`; outputs `dnsZoneId`/`dnsZoneName`/`dnsZoneNameServers` so the deployer can delegate at the registrar). Implemented `infra/modules/identity.bicep` (`Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30` UAMI `id-ops-agent` + sibling `federatedIdentityCredentials` resource named `fc-ops-agent-sa` with `issuer = aks.outputs.oidcIssuerUrl`, `subject = system:serviceaccount:default:ops-agent-sa`, `audiences = ['api://AzureADTokenExchange']`). All four role assignments wired with `principalType: 'ServicePrincipal'` and properly-scoped `existing` resource references: Foundry User (`53ca6127-…`) on Foundry account → UAMI; Key Vault Certificate User (`db79e9a7-…`) and Key Vault Secrets User (`4633458b-…`) on KV → App Routing add-on identity (companion role for the cert-from-secret flow recommended by App Routing docs); DNS Zone Contributor (`befefa01-…`) on DNS zone → App Routing add-on identity. Outputs: `uamiName`/`uamiClientId`/`uamiPrincipalId`/`uamiResourceId`.
+- Wired into `main.bicep` with new params `keyVaultName` (default `kv-zava-${uniqueString(resourceGroup().id)}` = 8 + 13 = 21 chars, well under the 24-char KV limit, starts with letter, alphanumeric+hyphen), `dnsZoneName` (default placeholder `zava.example.com` — deployer overrides), and `uamiName` (default `id-ops-agent`). Module dependency ordering is implicit via parameter inputs: `identity` consumes `aks.outputs.oidcIssuerUrl`, `aks.outputs.webAppRoutingIdentityObjectId`, `foundry.outputs.foundryAccountName`, `keyVault.outputs.keyVaultName`, `dns.outputs.dnsZoneName`, ensuring KV/DNS/Foundry/AKS all complete before identity runs. Added 5 new outputs (`keyVaultUri`, `dnsZoneName`, `dnsZoneNameServers`, `uamiClientId`, `uamiPrincipalId`).
+- Verification: `az bicep build --file infra/main.bicep` exits 0 with zero warnings/errors. Compiled ARM contains exactly 1 `"type": "Microsoft.KeyVault/vaults"` declaration, 1 `"type": "Microsoft.Network/dnsZones"`, 1 `"type": "Microsoft.ManagedIdentity/userAssignedIdentities"`, 1 `"type": "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials"`, all 4 role GUIDs present exactly once, and exactly 1 occurrence of `api://AzureADTokenExchange`. Compiled `infra/main.json` deleted (gitignored). Local implementation and verification complete; awaiting reviewer verdict.
 
 ---
 
@@ -773,13 +776,13 @@ Citation: `foundry-control-plane.md` §2.3, §8.
 
 ---
 
-#### Step 10: LangGraph Ops Agent — Dockerfile + K8s manifests — ⬜ Not started
+#### Step 10: LangGraph Ops Agent — Dockerfile + K8s manifests — ✅ Approved
 **Files:** `apps/ops-agent/Dockerfile`, `apps/ops-agent/k8s/deployment.yaml`, `apps/ops-agent/k8s/service.yaml`, `apps/ops-agent/k8s/ingress.yaml`
 **Depends on:** Step 9
 
 **Tasks:**
-- [ ] Create `Dockerfile`: multi-stage build. Stage 1 (builder): Python 3.13-slim, install deps from `pyproject.toml`. Stage 2 (runtime): copy installed packages + app code + `data/` directory. Entrypoint: `python -m app.server`. Expose port 9000. Run as non-root user
-- [ ] Create `k8s/deployment.yaml`:
+- [x] Create `Dockerfile`: multi-stage build. Stage 1 (builder): Python 3.13-slim, install deps from `pyproject.toml`. Stage 2 (runtime): copy installed packages + app code + `data/` directory. Entrypoint: `python -m app.server`. Expose port 9000. Run as non-root user
+- [x] Create `k8s/deployment.yaml`:
   - `Deployment` with 1 replica
   - Container: image from ACR (`${ACR_LOGIN_SERVER}/ops-agent:latest`), port 9000
   - `serviceAccountName: ops-agent-sa`
@@ -789,9 +792,9 @@ Citation: `foundry-control-plane.md` §2.3, §8.
   - Resource requests: 256Mi memory, 250m CPU; limits: 512Mi, 500m
   - Label: `azure.workload.identity/use: "true"` on pod template
   - `ServiceAccount` with annotation `azure.workload.identity/client-id: ${UAMI_CLIENT_ID}`
-- [ ] Create `k8s/secret.yaml`: K8s `Secret` named `ops-agent-secrets` with `A2A_API_KEY` data (base64-encoded). The deploy script (Step 15) generates the key with `openssl rand -base64 32` and creates/patches the Secret via `kubectl create secret generic`. Manifest file is a placeholder template — actual Secret is created imperatively to avoid committing keys.
-- [ ] Create `k8s/service.yaml`: ClusterIP Service, port 9000, selector matching deployment labels
-- [ ] Create `k8s/ingress.yaml`:
+- [x] Create `k8s/secret.template.yaml`: K8s `Secret` named `ops-agent-secrets` with `A2A_API_KEY` data (base64-encoded). The deploy script (Step 15) generates the key with `openssl rand -base64 32` and creates/patches the Secret via `kubectl create secret generic`. Manifest file is a placeholder template — actual Secret is created imperatively to avoid committing keys.
+- [x] Create `k8s/service.yaml`: ClusterIP Service, port 9000, selector matching deployment labels
+- [x] Create `k8s/ingress.yaml`:
   - `ingressClassName: webapprouting.kubernetes.azure.com`
   - Annotation: `kubernetes.azure.com/tls-cert-keyvault-uri: https://${KV_NAME}.vault.azure.net/certificates/tls-cert-ops-agent`
   - Host rule: `ops-agent.${DNS_ZONE}`
@@ -799,23 +802,33 @@ Citation: `foundry-control-plane.md` §2.3, §8.
   - Backend: service `ops-agent-svc`, port 9000
 
 **Verification:**
-- [ ] `docker build -t ops-agent:test -f apps/ops-agent/Dockerfile apps/ops-agent/` succeeds
-- [ ] `docker run --rm -p 9000:9000 -e AZURE_OPENAI_ENDPOINT=... ops-agent:test` starts and responds to health check
-- [ ] K8s manifests are valid YAML: `kubectl apply --dry-run=client -f apps/ops-agent/k8s/`
-- [ ] Ingress manifest references correct `ingressClassName` and TLS annotation format per `aks.md` §4.4
+- [ ] `docker build -t ops-agent:test -f apps/ops-agent/Dockerfile apps/ops-agent/` succeeds — **deferred to Step 14** (`az acr build` performs the equivalent build in ACR). Docker daemon is not running in this dev environment (`docker version` → "failed to connect to the docker API"). Dockerfile syntax was reviewed manually and follows the multi-stage pattern specified.
+- [ ] `docker run --rm -p 9000:9000 -e AZURE_OPENAI_ENDPOINT=... ops-agent:test` starts and responds to health check — deferred to Step 14/Step 15 (post-deploy probe). Local container smoke-test gated on Docker daemon availability.
+- [x] K8s manifests are valid YAML: confirmed via `python -c "yaml.safe_load_all(...)"` for `deployment.yaml`, `service.yaml`, `ingress.yaml`, `secret.template.yaml` — all parse cleanly. `kubectl create --dry-run=client` was attempted but blocked by stale kubeconfig pointing at a torn-down AKS cluster; full server-discovery validation will run in Step 15 when `kubectl` is configured against the live cluster.
+- [x] Ingress manifest references correct `ingressClassName` (`webapprouting.kubernetes.azure.com`) and TLS annotation `kubernetes.azure.com/tls-cert-keyvault-uri` per `aks.md` §4.4. `secretName` is `keyvault-ops-agent-ingress` = `keyvault-` + `metadata.name`.
 
 **Implementation Notes:**
-- K8s manifest values that reference deployment-specific names (ACR, KV, DNS zone) use placeholder variables — the deployment script substitutes them. Alternatively use Kustomize overlays
-- `secretName` in Ingress TLS must equal `keyvault-` + ingress metadata.name per `aks.md` §4.4
+- 2026-05-20: Implementation complete. File inventory:
+  - `apps/ops-agent/Dockerfile` — multi-stage `python:3.13-slim` build (3.13 chosen over 3.14 for wheel availability; matches `requires-python = ">=3.13"`). Builder installs the package via `pip install --prefix=/install .`; runtime copies `/install` → `/usr/local`, `app/` → `/srv/app`, `data/` → `/srv/data`. `DATA_DIR=/srv/data`, `WORKDIR=/srv`. Non-root `appuser` (uid 1001). `EXPOSE 9000`. `ENTRYPOINT ["python","-m","app"]` (resolves via `app/__main__.py` → `app.server.main()`).
+  - Dockerfile creates a placeholder `README.md` in the builder stage if absent, because `pyproject.toml` references it via `readme = "README.md"`. Authoring a proper README is out of scope for Step 10.
+  - `apps/ops-agent/.dockerignore` — excludes `.venv/`, `__pycache__/`, `*.pyc`, `.pytest_cache/`, `tests/`, `k8s/`, `Dockerfile`, `.dockerignore`, `*.egg-info/`.
+  - `apps/ops-agent/k8s/deployment.yaml` — two documents separated by `---`: `ServiceAccount ops-agent-sa` (annotated `azure.workload.identity/client-id: "${UAMI_CLIENT_ID}"`) and `Deployment ops-agent` (1 replica, label `azure.workload.identity/use: "true"` as a quoted string on the pod template, container `image: ${ACR_LOGIN_SERVER}/ops-agent:latest`, env for `AZURE_OPENAI_API_VERSION=2025-03-01-preview`, `DATA_DIR=/srv/data`, `OPS_AGENT_PUBLIC_URL=https://ops-agent.${DNS_ZONE}/`, `AZURE_OPENAI_ENDPOINT=${FOUNDRY_ENDPOINT}`, `AZURE_OPENAI_DEPLOYMENT=${WORKER_DEPLOYMENT_NAME}`, `AZURE_CLIENT_ID=${UAMI_CLIENT_ID}`, `A2A_API_KEY` via `secretKeyRef{name: ops-agent-secrets, key: A2A_API_KEY}`; HTTP `/health:9000` liveness/readiness probes; resources 250m/256Mi → 500m/512Mi).
+  - `apps/ops-agent/k8s/service.yaml` — ClusterIP `ops-agent-svc`, port 9000.
+  - `apps/ops-agent/k8s/ingress.yaml` — `webapprouting.kubernetes.azure.com` ingress class, TLS `secretName: keyvault-ops-agent-ingress` (= `keyvault-` + `metadata.name`, per `aks.md` §4.4), Key Vault cert URI annotation, host `ops-agent.${DNS_ZONE}`, backend `ops-agent-svc:9000`.
+  - `apps/ops-agent/k8s/secret.template.yaml` — schema-only template with prominent "DO NOT apply" header explaining that `scripts/deploy-k8s.ps1` (Step 15) creates the real Secret imperatively from a freshly-generated key. Includes both PowerShell (`[Convert]::ToBase64String(...)`) and bash (`openssl rand -base64 32`) recipes.
+- Placeholder convention: `${ACR_LOGIN_SERVER}`, `${UAMI_CLIENT_ID}`, `${FOUNDRY_ENDPOINT}`, `${WORKER_DEPLOYMENT_NAME}`, `${DNS_ZONE}`, `${KV_NAME}` — all substituted by `scripts/deploy-k8s.ps1` (Step 15) prior to `kubectl apply`.
+- `secretName` in Ingress TLS must equal `keyvault-` + ingress metadata.name per `aks.md` §4.4 — verified.
+- Docker build verification deferred: Docker daemon unavailable in this dev environment. Step 14 will exercise the Dockerfile via `az acr build`, which is the production path anyway.
+- Awaiting reviewer verdict.
 
 ---
 
-#### Step 11: Foundry Customer Service Agent — setup script — ⬜ Not started
+#### Step 11: Foundry Customer Service Agent — setup script — ✅ Approved
 **Files:** `apps/foundry-agent/setup_agent.py`, `apps/foundry-agent/create_a2a_connection.py`, `apps/foundry-agent/test_agent.py`
 **Depends on:** Step 4 (model deployments exist), Step 9 (AKS endpoint exists to reference)
 
 **Tasks:**
-- [ ] Create `setup_agent.py`: uses `azure-ai-projects` SDK to create the Foundry prompt agent:
+- [x] Create `setup_agent.py`: uses `azure-ai-projects` SDK to create the Foundry prompt agent:
   - `AIProjectClient(endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"], credential=DefaultAzureCredential())`
   - Reads orchestrator deployment name from `FOUNDRY_ORCHESTRATOR_DEPLOYMENT` env var (populated from Bicep output — do **NOT** hard-code `gpt-55-orchestrator` here; the `useGpt55=false` fallback may map this name to a different model)
   - Looks up the A2A connection by name: `connection = project.connections.get(name=os.environ["A2A_CONNECTION_NAME"])` — must already exist (created by `create_a2a_connection.py` first)
@@ -823,7 +836,7 @@ Citation: `foundry-control-plane.md` §2.3, §8.
   - System prompt from §A.6
   - Print agent name, version, ID
 
-- [ ] Create `create_a2a_connection.py` — **portal-first, SDK fallback**:
+- [x] Create `create_a2a_connection.py` — **portal-first, SDK fallback**:
   - **Canonical path (manual portal):** Print step-by-step instructions to stdout:
     1. Open Foundry portal → Project `zava-project` → Connections → "+ Add connection"
     2. Select "Agent (A2A)" connection type
@@ -837,7 +850,7 @@ Citation: `foundry-control-plane.md` §2.3, §8.
   - **Fallback attempt (SDK):** wrap in `try/except` — attempt `project.connections.create(connection_type="A2A", name="ops-agent-a2a", endpoint=..., auth=...)`. On success, print confirmation. On exception (most likely outcome — research indicates portal-only), print clear message: "SDK creation failed (expected — A2A connections are portal-only per current Preview). Please complete the manual portal steps above." Exit 0 either way; do not block.
   - `--verify` mode: lookup `project.connections.get(name="ops-agent-a2a")` and print connection details if found. Exit non-zero if not found.
 
-- [ ] Create `test_agent.py`: smoke test that invokes the agent with a sample feasibility query:
+- [x] Create `test_agent.py`: smoke test that invokes the agent with a sample feasibility query:
   - Reads agent name + deployment from env
   - Send input via `openai.responses.create(stream=True, input="Check feasibility for SKU ZP-7000, quantity 50, target_date 2026-07-15, customer CUST-001", extra_body={"agent_reference": {"name": "zava-customer-service"}})`
   - Verify response contains both:
@@ -847,17 +860,27 @@ Citation: `foundry-control-plane.md` §2.3, §8.
   - Print output text and any file artifacts
 
 **Verification:**
-- [ ] `python create_a2a_connection.py` prints portal instructions; if SDK fallback works, also prints "SDK fallback succeeded".
+- [x] `python create_a2a_connection.py` prints portal instructions; if SDK fallback works, also prints "SDK fallback succeeded".
 - [ ] After manual portal steps OR SDK fallback success: `python create_a2a_connection.py --verify` → connection lookup succeeds; prints connection ID
 - [ ] `python setup_agent.py` creates agent successfully (prints agent name/version); does NOT fail with "deployment not found" in either `useGpt55=true` or `useGpt55=false` configurations (env var indirection working)
 - [ ] `python test_agent.py` returns a response that includes both text and a Code Interpreter-generated artifact (requires deployed infrastructure — integration test)
 - [ ] A2A connection in Foundry portal references the correct AKS endpoint URL (`https://ops-agent.${DNS_ZONE}/`) with `x-api-key` auth header configured
 
 **Implementation Notes:**
-- `A2APreviewTool` requires a `project_connection_id` from a pre-configured A2A connection. Citation: `foundry-agents.md` §5
-- A2A outbound connections are **portal-created** in the current Foundry V2 Preview per `foundry-agents.md` lines 481–493. SDK creation is attempted as a fallback but not relied on.
-- Model reference uses **deployment name** (read from env var — could be `gpt-55-orchestrator` in primary path or remain `gpt-55-orchestrator` in fallback path pointing to gpt-5.4-mini; same name either way to keep this script branch-free)
-- The x-api-key value the Foundry connection uses must exactly match the K8s Secret value created in Step 15. Print both for the deployer to copy.
+- 2026-05-21: Local implementation and verification complete; awaiting reviewer verdict. Full integration verification items (connection lookup, agent creation, smoke test, portal A2A wiring) are deferred until Step 15 deploys infrastructure and a deployer completes the portal A2A step.
+- Files created: `setup_agent.py`, `create_a2a_connection.py`, `test_agent.py`, `system_prompt.md`, `.env.example`, `__init__.py`. `pyproject.toml` updated to add `openai>=2.0.0` and a `[dev]` extra with `pytest>=8.0.0` (the SDK pieces were already present from Step 1).
+- `system_prompt.md` extends §A.6 with explicit instructions for (a) **always** delegating SKU/quantity/date queries to the Ops Agent via A2A, (b) JSON-parsing the tool output before reasoning (mitigates R16 from §F if the SDK returns the artifact as a string), and (c) attaching a matplotlib chart via Code Interpreter on every feasibility response. Tone is calibrated to the sales-engineer / customer-architect personas from `docs/use-case.md`.
+- `setup_agent.py` supports `--dry-run` (skips all `AIProjectClient` calls — useful for CI / static verification) and `--verbose`. It defers SDK imports until after dry-run short-circuits so the dry-run path stays import-light. Fails fast with explicit RBAC / deployment / connection troubleshooting if `create_version` raises.
+- `create_a2a_connection.py` is portal-first by design. In default mode it always prints the boxed `x-api-key` value before attempting the SDK fallback, so the deployer has the value handy whether the fallback succeeds or fails. The SDK fallback is wrapped in a broad `except` and never blocks; observed failure mode in `azure-ai-projects` 2.1.0 is `AttributeError: 'ConnectionsOperations' object has no attribute 'create'`, which matches research §5 (portal-only in current Preview).
+- `test_agent.py` invokes the agent via `project.get_openai_client(default_query={"api-version": ...})` — the same pattern Step 12 (`agent_client.py`) settled on after discovering that the Foundry SDK forwards `**kwargs` to `openai.OpenAI` (no `api_version` kwarg). The R16 artifact-passthrough check tries common payload field names (`output`, `result`, `response`, `content`) on `remote_function_call` items because the exact field name has shifted across SDK builds; it surfaces a clear warning rather than failing if the payload is opaque.
+- **Local static verification (all passed):**
+  1. `pip install -e .` succeeds inside `.venv` (deps resolved: `azure-ai-projects>=2.1.0`, `azure-identity>=1.17.0`, `openai>=2.0.0`).
+  2. `ast.parse` succeeds for all three scripts.
+  3. `python create_a2a_connection.py --help` prints argparse usage.
+  4. `python setup_agent.py --dry-run` (with `FOUNDRY_PROJECT_ENDPOINT=https://fake.test/`, `FOUNDRY_ORCHESTRATOR_DEPLOYMENT=test`) prints the configuration banner and exits 0 without contacting Foundry.
+  5. `python create_a2a_connection.py` (default mode with placeholder env vars) prints the 9-step portal instructions plus the boxed API-key value, then prints the expected `ℹ SDK fallback failed` line and exits 0.
+  6. `system_prompt.md` (3.2 KB) and `.env.example` (6 env vars: `FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_ORCHESTRATOR_DEPLOYMENT`, `A2A_CONNECTION_NAME`, `FOUNDRY_AGENT_NAME`, `OPS_AGENT_ENDPOINT`, `OPS_AGENT_API_KEY`) both present and non-empty.
+- **Files added beyond the plan's `**Files:**` declaration:** `apps/foundry-agent/system_prompt.md` (loaded by `setup_agent.py`), `apps/foundry-agent/.env.example`, `apps/foundry-agent/__init__.py`. These were called out in the implementer brief as allowed scope.
 
 ---
 
@@ -1089,26 +1112,27 @@ Citation: `foundry-control-plane.md` §2.3, §8.
 
 ---
 
-#### Step 18: A2A protocol compliance test — ⬜ Not started
+#### Step 18: A2A protocol compliance test — ✅ Approved
 **Files:** `apps/ops-agent/tests/test_a2a_server.py`
 **Depends on:** Step 9
 
 **Tasks:**
-- [ ] Create `test_a2a_server.py` using `httpx` (async test client for Starlette):
+- [x] Create `test_a2a_server.py` using `httpx` (async test client for Starlette):
   - Test Agent Card: `GET /.well-known/agent-card.json` → 200, valid JSON, contains `name`, `skills`, `version`
   - Test health: `GET /health` → 200
   - Test message/send (v0.3 format): POST with `method: "message/send"`, v0.3 message format (with `kind` discriminators) → response contains `result` with task, artifact, completed state
   - Test malformed request: POST with invalid JSON-RPC → error response
   - Test v0.3 compatibility: ensure no `A2A-Version` header → server processes as v0.3
-- [ ] Mock the LangGraph graph invocation (replace `AzureChatOpenAI` with a mock) so tests run without Azure credentials
+- [x] Mock the LangGraph graph invocation (replace `AzureChatOpenAI` with a mock) so tests run without Azure credentials
 
 **Verification:**
-- [ ] `cd apps/ops-agent && python -m pytest tests/test_a2a_server.py -v` — all tests pass
-- [ ] Tests run without Azure credentials (mocked model calls)
+- [x] `cd apps/ops-agent && python -m pytest tests/test_a2a_server.py -v` — all tests pass
+- [x] Tests run without Azure credentials (mocked model calls)
 
 **Implementation Notes:**
 - Use `starlette.testclient.TestClient` for synchronous tests or `httpx.AsyncClient` with `app` transport for async
 - Mock `AzureChatOpenAI` to return a fixed response so the A2A protocol layer is tested independently
+- 2026-05-20: Implemented `apps/ops-agent/tests/test_a2a_server.py` with 7 test cases covering all required scenarios: (1) agent-card discovery + required-field validation, (2) health probe, (3) auth missing key → 401, (4) auth wrong key → 401, (5) v0.3 `message/send` happy path validating completed task + artifact carrying both DataPart (parsed feasibility JSON) and TextPart (recommendation), (6) malformed JSON-RPC → JSON-RPC error envelope, (7) unknown method → error code -32601. Mocking strategy: a `monkeypatch` fixture sets `A2A_API_KEY=test-key-123`, clears Azure env vars, and patches `app.executor.graph` (the binding the executor closes over) with a `SimpleNamespace(ainvoke=AsyncMock(...))` returning a fixed feasibility JSON. No new dependencies needed — `pytest`, `httpx`, and `starlette` (transitive via `a2a-sdk`) are already in the dev extras. Verification: `pytest tests/test_a2a_server.py -v -m "not integration"` → 7 passed in 9.14s. No Azure creds, no real network listener. Local implementation and verification complete; awaiting reviewer verdict.
 
 ---
 

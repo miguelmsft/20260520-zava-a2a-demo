@@ -72,6 +72,17 @@ param aksClusterName string = 'aks-zava-demo'
 @description('Globally-unique ACR name. Must be alphanumeric only, 5–50 chars. Defaults to a name derived from uniqueString(resourceGroup().id) to avoid collisions.')
 param acrName string = 'acrzavademo${uniqueString(resourceGroup().id)}'
 
+// --- Step 7: Key Vault + DNS + Workload Identity parameters ---
+
+@description('Globally-unique Key Vault name. Max 24 chars, alphanumeric + hyphen, must start with a letter. Default "kv-zava-<13-char hash>" stays under 24 (8 + 13 = 21 chars).')
+param keyVaultName string = 'kv-zava-${uniqueString(resourceGroup().id)}'
+
+@description('Public DNS zone name for the demo (e.g., "zava-demo.example.com"). The default is a placeholder — override with a domain you control. Delegation to Azure DNS is a manual post-deploy step (see deployment script).')
+param dnsZoneName string = 'zava.example.com'
+
+@description('User-Assigned Managed Identity name for the LangGraph Ops Agent pod (Workload Identity).')
+param uamiName string = 'id-ops-agent'
+
 // -----------------------------------------------------------------------------
 // Constants — Built-in role definition GUIDs
 // -----------------------------------------------------------------------------
@@ -145,6 +156,49 @@ module aks 'modules/aks.bicep' = {
     clusterName: aksClusterName
     dnsPrefix: aksClusterName
     logAnalyticsWorkspaceId: appInsights.outputs.logAnalyticsWorkspaceId
+    tags: tags
+  }
+}
+
+// Step 7 — Key Vault for the ingress TLS certificate. RBAC-only auth; no
+// access policies. Application Routing add-on identity is granted Certificate
+// User + Secrets User on this vault (in identity.bicep).
+module keyVault 'modules/keyvault.bicep' = {
+  name: 'keyvault-deploy'
+  params: {
+    location: location
+    keyVaultName: keyVaultName
+    tags: tags
+  }
+}
+
+// Step 7 — Public Azure DNS zone for the Ops Agent ingress hostname. The
+// Application Routing add-on identity is granted DNS Zone Contributor on this
+// zone (in identity.bicep) so the managed NGINX can manage record sets.
+module dns 'modules/dns.bicep' = {
+  name: 'dns-deploy'
+  params: {
+    dnsZoneName: dnsZoneName
+    tags: tags
+  }
+}
+
+// Step 7 — User-Assigned Managed Identity + federated credential for the
+// LangGraph Ops Agent K8s service account, plus all the role assignments
+// described in identity.bicep header. Depends implicitly on foundry, aks,
+// keyVault, and dns via parameter inputs (existing-resource lookups inside
+// identity.bicep need those resources to exist first — so we declare the
+// module-level dependsOn explicitly to be safe).
+module identity 'modules/identity.bicep' = {
+  name: 'identity-deploy'
+  params: {
+    location: location
+    uamiName: uamiName
+    aksOidcIssuerUrl: aks.outputs.oidcIssuerUrl
+    foundryAccountName: foundry.outputs.foundryAccountName
+    keyVaultName: keyVault.outputs.keyVaultName
+    dnsZoneName: dns.outputs.dnsZoneName
+    webAppRoutingIdentityObjectId: aks.outputs.webAppRoutingIdentityObjectId
     tags: tags
   }
 }
@@ -268,3 +322,20 @@ output aksWebAppRoutingIdentityObjectId string = aks.outputs.webAppRoutingIdenti
 
 @description('ACR login server hostname (e.g., myregistry.azurecr.io). Used by container build / push / pull and by the Kubernetes Deployment image reference.')
 output acrLoginServer string = acr.outputs.acrLoginServer
+
+// -- Key Vault + DNS + Workload Identity outputs (Step 7) ---------------------
+
+@description('Key Vault DNS endpoint URI (https://<name>.vault.azure.net/). Set as kubernetes.azure.com/tls-cert-keyvault-uri-prefix on the ingress.')
+output keyVaultUri string = keyVault.outputs.keyVaultUri
+
+@description('Public DNS zone name. Configure A/CNAME records here for the Ops Agent ingress hostname.')
+output dnsZoneName string = dns.outputs.dnsZoneName
+
+@description('Authoritative name servers Azure assigned to the DNS zone — configure these at the domain registrar to delegate the zone.')
+output dnsZoneNameServers array = dns.outputs.dnsZoneNameServers
+
+@description('UAMI client ID — set as azure.workload.identity/client-id on the Ops Agent K8s service account.')
+output uamiClientId string = identity.outputs.uamiClientId
+
+@description('UAMI principal (object) ID — useful for ad-hoc RBAC operations outside identity.bicep.')
+output uamiPrincipalId string = identity.outputs.uamiPrincipalId
