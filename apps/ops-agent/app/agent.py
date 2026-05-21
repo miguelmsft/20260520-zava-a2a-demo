@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from functools import lru_cache
 from typing import Any, NotRequired
 
@@ -186,6 +186,56 @@ _NL_QTY_NEAR_SKU_RE = re.compile(
     r"\b(?:[A-Z]{2}-\d{2,5})\s*(?:x|×)\s*(\d{1,7})\b"
 )
 
+# Formats tried by _parse_natural_date (after ISO fallback).
+_NATURAL_DATE_FORMATS = [
+    "%B %d %Y",    # July 15 2026
+    "%B %d, %Y",   # July 15, 2026
+    "%d %B %Y",    # 15 July 2026
+    "%d %b %Y",    # 15 Jul 2026
+    "%b %d %Y",    # Jul 15 2026
+    "%b %d, %Y",   # Jul 15, 2026
+    "%m/%d/%Y",    # 7/15/2026
+    "%Y/%m/%d",    # 2026/07/15
+]
+
+
+def _parse_natural_date(text: str) -> str | None:
+    """Try to extract a date from *text* and return ISO ``YYYY-MM-DD`` or None.
+
+    1. ISO regex first  (``2026-07-15``)
+    2. Natural-language formats via ``datetime.strptime``
+    3. Strips abbreviated-month periods (``Jul.`` → ``Jul``) before retrying
+    """
+    # 1. ISO regex
+    iso_m = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
+    if iso_m:
+        return iso_m.group(1)
+
+    # Normalise: strip periods after month abbreviations (e.g. "Jul." → "Jul")
+    cleaned = re.sub(r"\b([A-Za-z]{3,9})\.\s", r"\1 ", text)
+
+    # 2. Try each natural-language format against candidate substrings.
+    # We slide a window over tokens to build candidate strings of 3 tokens
+    # (covers "July 15 2026", "15 Jul 2026", "7/15/2026", etc.).
+    tokens = cleaned.split()
+    for i in range(len(tokens)):
+        for width in (3, 2, 1):
+            if i + width > len(tokens):
+                continue
+            candidate = " ".join(tokens[i : i + width])
+            # Strip trailing punctuation (e.g. "2026?" → "2026")
+            candidate = candidate.rstrip("?!.,;:")
+            # Also try the candidate with commas removed for ","-delimited
+            # formats already handled above, and with commas preserved.
+            for variant in (candidate, candidate.replace(",", "")):
+                for fmt in _NATURAL_DATE_FORMATS:
+                    try:
+                        dt = datetime.strptime(variant, fmt)
+                        return dt.strftime("%Y-%m-%d")
+                    except ValueError:
+                        continue
+    return None
+
 
 def _tolerant_parse(text: str) -> dict[str, Any]:
     """Best-effort extraction of (sku, quantity, target_date, customer_id).
@@ -225,6 +275,8 @@ def _tolerant_parse(text: str) -> dict[str, Any]:
         nl_date = _NL_DATE_RE.search(text)
         if nl_date:
             target_date = nl_date.group(1)
+    if target_date is None:
+        target_date = _parse_natural_date(text)
     if quantity is None:
         nl_qty = _NL_QTY_NEAR_SKU_RE.search(text)
         if nl_qty:
@@ -508,4 +560,5 @@ __all__ = [
     "get_model",
     "get_model_with_tools",
     "_tolerant_parse",
+    "_parse_natural_date",
 ]

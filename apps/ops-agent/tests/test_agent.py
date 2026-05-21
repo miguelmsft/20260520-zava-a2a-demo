@@ -141,6 +141,37 @@ def test_tolerant_parse_empty_string():
     }
 
 
+def test_tolerant_parse_natural_date_month_day_year():
+    """Natural-language date: 'July 15 2026' → ISO 2026-07-15."""
+    from app.agent import _tolerant_parse
+
+    out = _tolerant_parse(
+        "Can we ship 150 ZP-7000 for CUST-001 by July 15 2026?"
+    )
+    assert out["target_date"] == "2026-07-15"
+    assert out["sku"] == "ZP-7000"
+
+
+def test_tolerant_parse_natural_date_slash_format():
+    """Slash date: '7/15/2026' → ISO 2026-07-15."""
+    from app.agent import _tolerant_parse
+
+    out = _tolerant_parse(
+        "Deliver 100 ZP-7000 to CUST-001 by 7/15/2026"
+    )
+    assert out["target_date"] == "2026-07-15"
+
+
+def test_tolerant_parse_natural_date_day_month_year():
+    """European-style natural date: '15 Jul 2026' → ISO 2026-07-15."""
+    from app.agent import _tolerant_parse
+
+    out = _tolerant_parse(
+        "Order 50 MX-200 for CUST-002, needed by 15 Jul 2026"
+    )
+    assert out["target_date"] == "2026-07-15"
+
+
 # ---------------------------------------------------------------------------
 # parse_request node
 # ---------------------------------------------------------------------------
