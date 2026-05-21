@@ -10,11 +10,19 @@
 //
 // Branching semantics (R1 fallback — see plan.md §C Step 4 / §F):
 //   - useGpt55 = true  (PRIMARY):
-//       Orchestrator -> gpt-5.5       (2026-04-24, GlobalStandard, capacity 1)
-//       Worker       -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 10)
+//       Orchestrator -> gpt-5.5       (2026-04-24, GlobalStandard, capacity 50)
+//       Worker       -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 100)
 //   - useGpt55 = false (FALLBACK):
-//       Orchestrator -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 10)
-//       Worker       -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 10)
+//       Orchestrator -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 100)
+//       Worker       -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 100)
+//
+// Capacity sizing notes:
+//   - Code Interpreter + A2A workflows burn through TPM very quickly because
+//     each tool round-trip adds reasoning tokens. With capacity=10 (1K TPM)
+//     a single feasibility query hits a 429 mid-stream. capacity=100 (=100K
+//     TPM for gpt-5.4-mini GlobalStandard) gives enough headroom for the
+//     demo without exhausting subscription quota (default limit is 1000
+//     units in eastus2).
 //
 // In BOTH branches the module emits two distinct deployments with different
 // names so the demo's "different deployment per agent" property is preserved.
@@ -55,7 +63,7 @@ var gpt54MiniModelVersion = '2026-03-17'
 // Resolved orchestrator model parameters (branch on useGpt55).
 var orchestratorModelName = useGpt55 ? gpt55ModelName : gpt54MiniModelName
 var orchestratorModelVersion = useGpt55 ? gpt55ModelVersion : gpt54MiniModelVersion
-var orchestratorCapacity = useGpt55 ? 1 : 10
+var orchestratorCapacity = useGpt55 ? 50 : 100
 
 // -----------------------------------------------------------------------------
 // Existing parent — Foundry account
@@ -94,7 +102,7 @@ resource workerDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026
   name: workerDeploymentName
   sku: {
     name: 'GlobalStandard'
-    capacity: 10
+    capacity: 100
   }
   properties: {
     model: {

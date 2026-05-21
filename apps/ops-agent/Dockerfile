@@ -4,7 +4,13 @@
 # 3.13 is chosen instead of 3.14 because `python:3.13-slim` is a stable Docker Hub
 # image at the time of this build, while 3.14 wheels for some dependencies may
 # not yet be widely available.
-FROM python:3.13-slim AS builder
+#
+# PYTHON_IMAGE is a build arg so we can override the source registry when
+# Docker Hub anonymous pulls are rate-limited. ACR builds can pass
+# --build-arg PYTHON_IMAGE=<acr-name>.azurecr.io/python:3.13-slim after
+# importing the base image into ACR via `az acr import`.
+ARG PYTHON_IMAGE=python:3.13-slim
+FROM ${PYTHON_IMAGE} AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -30,7 +36,7 @@ RUN test -f README.md || printf '%s\n' '# zava-ops-agent' > README.md
 RUN pip install --no-cache-dir --prefix=/install .
 
 # ---------- Stage 2: runtime ----------
-FROM python:3.13-slim AS runtime
+FROM ${PYTHON_IMAGE} AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

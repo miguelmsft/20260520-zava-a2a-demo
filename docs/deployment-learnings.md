@@ -307,10 +307,13 @@ turned into a hard delete by the same purge protection — i.e., before the
 ### 5.2 `Standard_D2s_v5` may not be available in your subscription
 
 In some subscriptions (including the one this was validated against),
-`Standard_D2s_v5` returns `NotAvailableForSubscription` in eastus2. The
-fix (committed): `infra/modules/aks.bicep` and `scripts/verify-quota.ps1`
-now default to `Standard_D2s_v6`. If neither is available in your
-subscription/region, override with `-AksNodeSku` on both scripts.
+`Standard_D2s_v5` returns `NotAvailableForSubscription` in eastus2. Likewise,
+`Standard_D2s_v6` (the Intel v6 SKU) is **also unavailable in eastus2** as
+of 2026-05-21 — fresh AKS deploys reject it with an `allowed-SKUs` error.
+The fix (committed): `infra/modules/aks.bicep` now defaults to
+`Standard_D2as_v6` (the AMD v6 equivalent), which is broadly available
+in eastus2. If neither is available in your subscription/region, override
+with `-AksNodeSku` on both scripts.
 
 ### 5.3 gpt-5.5 quota is often 0 in lab subscriptions
 
@@ -335,27 +338,26 @@ A single end-to-end demo run includes ~5–10 Code Interpreter executions,
 in burst. After the first run you will hit `429 Too Many Requests` for
 several minutes.
 
-**Recommended:** scale both deployments to **capacity = 50** (50K TPM)
-immediately after `deploy-infra.ps1` finishes. The demo subscription used
-for validation has 1000 TPM quota for `gpt-5.4-mini` in eastus2, plenty
-of room.
+**Status as of 2026-05-21:** The default `capacity` in
+`infra/modules/foundry-models.bicep` has been raised to **100** for both
+deployments (orchestrator + worker), which gives ~100K TPM — enough
+headroom for repeated demo runs without throttling. The previous
+default of 10 caused mid-stream 429s after just one Code Interpreter
++ A2A loop. The demo subscription used for validation has 1000 TPM
+quota for `gpt-5.4-mini` in eastus2, plenty of room.
+
+If you do need to scale an existing deployment in place after a deploy:
 
 ```powershell
-$ver = az cognitiveservices account deployment show `
-  --resource-group rg-zava-a2a-smart-order-demo --name foundry-zava-a2a-smartorder `
-  --deployment-name gpt-55-orchestrator --query 'properties.model.version' -o tsv
-
+$sub = az account show --query id -o tsv
 foreach ($d in @('gpt-55-orchestrator','gpt-54mini-worker')) {
-  az cognitiveservices account deployment create `
-    --resource-group rg-zava-a2a-smart-order-demo --name foundry-zava-a2a-smartorder `
-    --deployment-name $d `
-    --model-name gpt-5.4-mini --model-version $ver --model-format OpenAI `
-    --sku-capacity 50 --sku-name GlobalStandard
+  $resId = "/subscriptions/$sub/resourceGroups/rg-zava-a2a-smart-order-demo/providers/Microsoft.CognitiveServices/accounts/foundry-zava-a2a-smartorder/deployments/$d"
+  az resource update --ids $resId --api-version 2026-03-01 --set "sku.capacity=200"
 }
 ```
 
-(`deployment create` with an existing name is idempotent and effectively
-scales in place.)
+(`az resource update --set sku.capacity=N` patches the deployment in
+place without re-creating it — no impact on agents or connections.)
 
 ### 5.5 AKS auto-stops when idle
 
@@ -404,6 +406,42 @@ Expected output (last few lines):
 
 If any line shows `✗`, refer back to §2–§5 — every published GA gap has a
 known fix.
+
+### 6.1 Python 3.14 + azure-ai-projects incompatibility (host venv)
+
+If your **host machine** has Python 3.14 installed (Python 3.14 was just
+released), the `test_agent.py` smoke test will fail mid-stream with:
+
+```
+AttributeError: 'typing.Union' object has no attribute '__discriminator__'
+```
+
+This is an SDK / typing compatibility issue between `azure-ai-projects`
+(2.1.x) and Python 3.14's stricter typing model. The Docker image used
+by the AKS Ops Agent is pinned to `python:3.13-slim`, so the deployed
+side is unaffected — only the host venvs are.
+
+**Fix:** create the host venvs with Python 3.13 (not 3.14). With `uv`:
+
+```powershell
+uv python install 3.13
+$py = uv python find 3.13
+foreach ($app in @('apps\backend','apps\foundry-agent')) {
+  Remove-Item -Recurse -Force "$app\.venv" -ErrorAction SilentlyContinue
+  & $py -m venv "$app\.venv"
+  & "$app\.venv\Scripts\python.exe" -m pip install -e $app --quiet
+}
+```
+
+### 6.2 Windows console + Unicode in setup helpers
+
+`apps/foundry-agent/{create_a2a_connection,setup_agent,test_agent}.py`
+print ✓ / ✗ glyphs. Windows consoles using `cp1252` will crash with
+`UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'`.
+
+**Fix:** the scripts now call `sys.stdout.reconfigure(encoding='utf-8')`
+on startup (Python 3.7+), so no env-var workaround is needed. If you
+fork or copy these scripts, keep that snippet.
 
 ---
 

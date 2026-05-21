@@ -53,6 +53,14 @@ from typing import Optional
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+# Force UTF-8 on stdout/stderr so checkmark/cross glyphs don't crash on
+# Windows consoles using cp1252 (Python 3.7+).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        pass
+
 DEFAULT_A2A_CONNECTION = "ops-agent-a2a"
 ARM_API_VERSION = "2025-06-01"
 

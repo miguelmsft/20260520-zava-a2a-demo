@@ -26,6 +26,14 @@ import os
 import sys
 from typing import Any, Optional
 
+# Force UTF-8 on stdout/stderr so checkmark/cross glyphs don't crash on
+# Windows consoles using cp1252 (Python 3.7+).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        pass
+
 DEFAULT_AGENT_NAME = "zava-customer-service"
 DEFAULT_API_VERSION = "preview"
 SAMPLE_QUERY = (

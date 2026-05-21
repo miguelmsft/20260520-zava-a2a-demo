@@ -33,6 +33,14 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+# Force UTF-8 on stdout/stderr so checkmark/cross glyphs don't crash on
+# Windows consoles using cp1252 (Python 3.7+).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        pass
+
 DEFAULT_A2A_CONNECTION = "ops-agent-a2a"
 DEFAULT_AGENT_NAME = "zava-customer-service"
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "system_prompt.md"
