@@ -64,7 +64,15 @@
     REQUIRED. Foundry project endpoint, e.g.,
     `https://zava-foundry.services.ai.azure.com/api/projects/zava-project`.
     Source: deploy-infra.ps1 summary ("Foundry project endpoint"). Used as
-    AZURE_OPENAI_ENDPOINT inside the pod.
+    FOUNDRY_PROJECT_ENDPOINT inside the pod (for future AIProjectClient use).
+
+.PARAMETER FoundryAccountEndpoint
+    Optional. Foundry account inference endpoint (Azure OpenAI-compatible base
+    URL), e.g., `https://zava-foundry.services.ai.azure.com`. Source:
+    deploy-infra.ps1 summary ("Foundry account inference endpoint"). Used as
+    AZURE_OPENAI_ENDPOINT inside the pod by `langchain_openai.AzureChatOpenAI`.
+    If omitted, the script derives it by stripping the `/api/projects/...`
+    suffix from -FoundryEndpoint.
 
 .PARAMETER WorkerDeploymentName
     REQUIRED. Name of the model deployment the LangGraph worker calls
@@ -119,6 +127,9 @@ param(
 
     [Parameter(Mandatory = $true)]
     [string] $FoundryEndpoint,
+
+    [Parameter(Mandatory = $false)]
+    [string] $FoundryAccountEndpoint,
 
     [Parameter(Mandatory = $true)]
     [string] $WorkerDeploymentName,
@@ -305,13 +316,27 @@ Write-Section 'Render manifests'
 # by replacing the literal image reference; if a future revision of the template
 # uses `${IMAGE_TAG}` directly, the substitution below also covers it.
 $substitutions = [ordered]@{
-    '${ACR_LOGIN_SERVER}'        = $AcrLoginServer
-    '${KV_NAME}'                 = $KvName
-    '${DNS_ZONE}'                = $DnsZone
-    '${UAMI_CLIENT_ID}'          = $UamiClientId
-    '${FOUNDRY_ENDPOINT}'        = $FoundryEndpoint
-    '${WORKER_DEPLOYMENT_NAME}'  = $WorkerDeploymentName
-    '${IMAGE_TAG}'               = $ImageTag
+    '${ACR_LOGIN_SERVER}'              = $AcrLoginServer
+    '${KV_NAME}'                       = $KvName
+    '${DNS_ZONE}'                      = $DnsZone
+    '${UAMI_CLIENT_ID}'                = $UamiClientId
+    '${FOUNDRY_ENDPOINT}'              = $FoundryEndpoint
+    '${FOUNDRY_ACCOUNT_ENDPOINT}'      = ''  # set below
+    '${WORKER_DEPLOYMENT_NAME}'        = $WorkerDeploymentName
+    '${IMAGE_TAG}'                     = $ImageTag
+}
+
+# Derive the OpenAI-compatible inference endpoint if not provided explicitly.
+# Strip the `/api/projects/...` suffix from the Foundry project endpoint so the
+# pod gets the account base URL that AzureChatOpenAI expects.
+if (-not [string]::IsNullOrWhiteSpace($FoundryAccountEndpoint)) {
+    $substitutions['${FOUNDRY_ACCOUNT_ENDPOINT}'] = $FoundryAccountEndpoint
+}
+else {
+    $derived = $FoundryEndpoint -replace '/api/projects/.*$', ''
+    $derived = $derived.TrimEnd('/')
+    $substitutions['${FOUNDRY_ACCOUNT_ENDPOINT}'] = $derived
+    Write-Host ("  ℹ Derived FOUNDRY_ACCOUNT_ENDPOINT from FoundryEndpoint: {0}" -f $derived) -ForegroundColor DarkGray
 }
 
 function Invoke-ManifestRender {

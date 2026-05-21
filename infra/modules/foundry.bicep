@@ -64,6 +64,9 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2026-03-01' = {
 @description('Foundry V2 project endpoint (Responses API / AIProjectClient).')
 output projectEndpoint string = 'https://${foundryName}.services.ai.azure.com/api/projects/${projectName}'
 
+@description('Foundry account inference endpoint — Azure OpenAI-compatible base URL (no /api/projects path). Use this for langchain_openai.AzureChatOpenAI(azure_endpoint=...).')
+output accountInferenceEndpoint string = 'https://${foundryName}.services.ai.azure.com'
+
 @description('Foundry account ARM resource ID — use as scope for RBAC and child deployments.')
 output foundryResourceId string = foundry.id
 

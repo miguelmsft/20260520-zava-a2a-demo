@@ -90,8 +90,8 @@ references are absolute.
 sequenceDiagram
     autonumber
     participant U as User (browser)
-    participant R as React UI<br/>(apps/web)
-    participant B as FastAPI backend<br/>(apps/api)
+    participant R as React UI<br/>(apps/frontend)
+    participant B as FastAPI backend<br/>(apps/backend)
     participant F as Foundry V2 Agent<br/>(zava-customer-service)
     participant AT as A2APreviewTool<br/>(in Foundry runtime)
     participant CI as CodeInterpreterTool<br/>(in Foundry runtime)
@@ -112,7 +112,7 @@ sequenceDiagram
     OA->>OA: enqueue Task(SUBMITTED) +<br/>TaskStatusUpdateEvent(WORKING)
     OA->>LG: graph.ainvoke({messages:[user]})
     LG->>LG: AzureChatOpenAI (gpt-5.4-mini)<br/>decides tool calls
-    LG->>LG: ToolNode runs lookup_inventory,<br/>get_production_capacity, ...
+    LG->>LG: ToolNode runs lookup_inventory,<br/>lookup_production_schedule, ...
     LG->>LG: Model synthesizes feasibility JSON
     LG-->>OA: final assistant message (JSON in text)
     OA->>OA: parse JSON → DataPart;<br/>raw text → TextPart
@@ -131,8 +131,8 @@ sequenceDiagram
 ### 3.2 Narrative trace
 
 1. **Browser → React → backend.** The user submits the feasibility form in
-   `apps/web`. React posts the rendered prompt to `POST /api/chat` on the
-   FastAPI backend (`apps/api`), which opens a Server-Sent Events stream.
+   `apps/frontend`. React posts the rendered prompt to `POST /api/chat` on the
+   FastAPI backend (`apps/backend`), which opens a Server-Sent Events stream.
 2. **Backend → Foundry orchestrator.** The backend issues
    `client.responses.create(stream=True, extra_body={"agent_reference": {
    "agent_name": "zava-customer-service", "agent_version": "<n>"}})`. This is
@@ -177,21 +177,30 @@ sequenceDiagram
    - awaits `graph.ainvoke({"messages": [{"role": "user", "content":
      user_text}]})` (lines 166–168).
 7. **LangGraph processing.** The graph is built in
-   [`apps/ops-agent/app/agent.py`](../apps/ops-agent/app/agent.py). It
-   binds an `AzureChatOpenAI` model (deployment `ops-agent-gpt-5-4-mini`)
-   to the tool set `lookup_inventory`, `get_production_capacity`,
-   `lookup_lead_time`, `list_competing_orders`. The model emits tool
-   calls; `ToolNode` runs them against the fake Zava CSV/JSON data;
-   results flow back; the model synthesizes a single final assistant
-   message containing a JSON object with `feasibility_score`,
-   `can_fulfill`, `earliest_promise_date`, `risk_factors`, and
-   `recommendation`.
-8. **Artifact emission.** The executor reads that last message
-   (`_final_assistant_text`, lines 61–79), best-effort-parses the JSON
-   (`_try_parse_feasibility`, lines 85–113), then builds an artifact with
-   *both* a `DataPart` carrying the parsed dict and a `TextPart` carrying
-   the raw text (lines 182–197). It publishes
-   `TaskArtifactUpdateEvent(last_chunk=True)` and then
+   [`apps/ops-agent/app/agent.py`](../apps/ops-agent/app/agent.py). It is a
+   **deterministic sequential graph**: `parse_request → gather_data →
+   compute_feasibility → summarize → END`. `gather_data` unconditionally
+   invokes the four `@tool`-decorated functions — `lookup_inventory`,
+   `lookup_production_schedule`, `lookup_order_book`, `lookup_customer` —
+   against the fake Zava JSON data. `compute_feasibility` then calls the
+   pure function `feasibility.compute_feasibility(...)` (canonical schema
+   source: [`apps/ops-agent/app/feasibility.py`](../apps/ops-agent/app/feasibility.py))
+   to produce the 12-field feasibility result deterministically. The
+   `AzureChatOpenAI` model (deployment `gpt-54mini-worker`) is only
+   invoked in the `summarize` node, which writes the prose
+   `recommendation_text` over the already-computed feasibility dict. The
+   JSON schema includes `feasibility_score`, `can_fulfill`,
+   `requested_quantity`, `available_inventory`,
+   `production_capacity_by_date`, `supplier_pipeline`,
+   `total_fulfillable`, `earliest_promise_date`, `requested_date`,
+   `days_late`, `risk_factors`, and `recommendation_text`.
+8. **Artifact emission.** The executor reads
+   `result["feasibility"]` directly from the graph state
+   (`executor.py` line ~180; falls back to `_try_parse_feasibility` on
+   the final assistant text only if the state field is missing). It
+   builds an artifact with *both* a `DataPart` carrying the computed
+   feasibility dict and a `TextPart` carrying the prose summary. It
+   publishes `TaskArtifactUpdateEvent(last_chunk=True)` and then
    `TaskStatusUpdateEvent(state=COMPLETED)` via `updater.complete()`.
 9. **Back to Foundry.** The `A2APreviewTool` receives the completed
    `Task` as its tool result. Because Foundry deserializes parts by kind,

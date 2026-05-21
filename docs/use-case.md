@@ -106,11 +106,11 @@ sequenceDiagram
 
 1. **User input.** The rep types a natural-language question into the React chat UI. The FastAPI backend forwards it to the Foundry Customer Service Agent via the Azure AI Projects SDK.
 2. **Foundry Agent — intent parsing and delegation.** The orchestrator agent (`gpt-5.5`) extracts the structured intent (`sku=ZP-7000`, `quantity=150`, `target_date=2026-07-15`, `customer_id=CUST-001`) and decides this requires the Manufacturing Ops Agent. It invokes its native **A2A outbound tool** (`A2APreviewTool`), which sends a JSON-RPC `message/send` request to the LangGraph A2A endpoint. See `plan.md` §A.5 for the exact wire format.
-3. **LangGraph Ops Agent — data lookup.** The worker agent (`gpt-5.4-mini`) running on AKS receives the A2A task and calls a sequence of typed tools that read the four JSON datasets:
-   - `get_inventory("ZP-7000")` → `available = 25`, supplier lead time 21 days
-   - `get_production_capacity("ZP-7000", by="2026-07-15")` → 96 units producible by date
-   - `get_competing_orders("ZP-7000", window=...)` → 3 open orders in the same window
-   - `get_customer("CUST-001")` → platinum tier (qualifies for priority scheduling)
+3. **LangGraph Ops Agent — data lookup.** The worker agent (`gpt-5.4-mini`) running on AKS receives the A2A task and the deterministic graph (`gather_data` node) unconditionally calls four typed tools that read the four JSON datasets:
+   - `lookup_inventory("ZP-7000")` → `available = 25`, supplier lead time 21 days
+   - `lookup_production_schedule("ZP-7000", start_date, end_date)` → 96 units producible by date
+   - `lookup_order_book("ZP-7000")` → 3 open orders in the same window
+   - `lookup_customer("CUST-001")` → platinum tier (qualifies for priority scheduling)
 4. **Feasibility computation.** Applying the rule from `plan.md` §A.5:
    ```
    total_fulfillable = 25 (inventory) + 96 (production) + 50 (supplier pipeline) = 171

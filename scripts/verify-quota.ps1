@@ -171,8 +171,24 @@ $fallbackEntry = Get-CognitiveUsageEntry -Usage $usage -QuotaName $fallbackUsage
 Write-Host (Format-QuotaLine -Label 'gpt-5.5      (Global Standard)' -Entry $primaryEntry)
 Write-Host (Format-QuotaLine -Label 'gpt-5.4-mini (Global Standard)' -Entry $fallbackEntry)
 
-$primaryLimit  = if ($primaryEntry)  { [double]$primaryEntry.limit }  else { 0 }
-$fallbackLimit = if ($fallbackEntry) { [double]$fallbackEntry.limit } else { 0 }
+# Compute available headroom = limit - currentValue. Readiness is based on
+# this, NOT on raw limit (which can be > 0 even when fully consumed).
+function Get-Available {
+    param($Entry)
+    if ($null -eq $Entry) { return 0 }
+    $limit   = [double]($Entry.limit)
+    $current = [double]($Entry.currentValue)
+    return [Math]::Max(0, $limit - $current)
+}
+$primaryAvailable  = Get-Available -Entry $primaryEntry
+$fallbackAvailable = Get-Available -Entry $fallbackEntry
+
+# Minimum capacity required (in thousands TPM). gpt-5.5 deploys at capacity=1
+# (=1k TPM), gpt-5.4-mini at capacity=10. We require at least the deployment
+# size + a small headroom buffer.
+$minPrimaryCapacity  = 1   # gpt-5.5 (orchestrator)
+$minWorkerCapacity   = 10  # gpt-5.4-mini (worker in primary, both deployments in fallback)
+$minFallbackCapacity = 20  # 2 × worker (orchestrator + worker share the same model in fallback path)
 
 # -----------------------------------------------------------------------------
 # 3. AKS SKU availability
@@ -227,20 +243,20 @@ else {
 # -----------------------------------------------------------------------------
 Write-Section 'Decision'
 
-$primaryReady  = ($primaryLimit  -gt 0)
-$fallbackReady = ($fallbackLimit -gt 0)
+$primaryReady  = ($primaryAvailable  -ge $minPrimaryCapacity) -and ($fallbackAvailable -ge $minWorkerCapacity)
+$fallbackReady = ($fallbackAvailable -ge $minFallbackCapacity)
 
 if (-not $skuAvailable) {
     Write-Host "⚠ AKS SKU $aksNodeSku is not confirmed in $Location. Choose a different SKU in infra/modules/aks.bicep or a different region before deploying." -ForegroundColor Yellow
 }
 
 if ($primaryReady) {
-    Write-Host "✓ PRIMARY PATH READY (useGpt55=true). gpt-5.5 quota = $primaryLimit, gpt-5.4-mini quota = $fallbackLimit." -ForegroundColor Green
+    Write-Host ("✓ PRIMARY PATH READY (useGpt55=true). gpt-5.5 available={0}, gpt-5.4-mini available={1}." -f $primaryAvailable, $fallbackAvailable) -ForegroundColor Green
     Write-Host '  → Run: ./scripts/deploy-infra.ps1 -DnsZoneName <your.zone>'
     exit 0
 }
 elseif ($fallbackReady) {
-    Write-Host "⚠ FALLBACK PATH AVAILABLE (set useGpt55=false). gpt-5.5 quota = 0; gpt-5.4-mini quota = $fallbackLimit." -ForegroundColor Yellow
+    Write-Host ("⚠ FALLBACK PATH AVAILABLE (set useGpt55=false). gpt-5.5 available={0} (need {1}); gpt-5.4-mini available={2} (need {3})." -f $primaryAvailable, $minPrimaryCapacity, $fallbackAvailable, $minFallbackCapacity) -ForegroundColor Yellow
     Write-Host '  Both agents will run on gpt-5.4-mini (with distinct deployment names — see plan §F R1).'
     Write-Host '  → Run: ./scripts/deploy-infra.ps1 -DnsZoneName <your.zone> -UseGpt55:$false'
     Write-Host ''

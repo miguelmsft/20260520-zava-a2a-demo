@@ -247,6 +247,7 @@ $appInsightsName               = Get-Out 'appInsightsName'
 $appInsightsId                 = Get-Out 'appInsightsId'
 $foundryAccountName            = Get-Out 'foundryAccountName'
 $foundryEndpoint               = Get-Out 'projectEndpoint'
+$foundryAccountEndpoint        = Get-Out 'accountInferenceEndpoint'
 $projectName                   = Get-Out 'projectName'
 $uamiClientId                  = Get-Out 'uamiClientId'
 $uamiPrincipalId               = Get-Out 'uamiPrincipalId'
@@ -396,10 +397,11 @@ Write-Section 'Deployment Summary'
 $summary = [ordered]@{
     'Resource group'                 = $ResourceGroupName
     'Location'                       = $Location
-    'Foundry account'                = $foundryAccountName
-    'Foundry project'                = $projectName
-    'Foundry project endpoint'       = $foundryEndpoint
-    'Orchestrator deployment'        = $orchestratorDeploymentName
+    'Foundry account'                  = $foundryAccountName
+    'Foundry project'                  = $projectName
+    'Foundry project endpoint'         = $foundryEndpoint
+    'Foundry account inference endpoint' = $foundryAccountEndpoint
+    'Orchestrator deployment'          = $orchestratorDeploymentName
     'Worker deployment'              = $workerDeploymentName
     'AKS cluster'                    = $aksClusterName
     'ACR login server'               = $acrLoginServer
@@ -435,6 +437,7 @@ $nextCmd += "`n    -KvName $kvName ``"
 $nextCmd += "`n    -UamiClientId $uamiClientId ``"
 $nextCmd += "`n    -DnsZone $dnsZoneNameOut ``"
 $nextCmd += "`n    -FoundryEndpoint $foundryEndpoint ``"
+$nextCmd += "`n    -FoundryAccountEndpoint $foundryAccountEndpoint ``"
 $nextCmd += "`n    -WorkerDeployment $workerDeploymentName"
 Write-Host $nextCmd
 Write-Host ''

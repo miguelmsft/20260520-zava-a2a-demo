@@ -266,6 +266,9 @@ resource aksKubeletAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 @description('Foundry V2 project endpoint — set as PROJECT_ENDPOINT in agent configs.')
 output projectEndpoint string = foundry.outputs.projectEndpoint
 
+@description('Foundry account inference endpoint — Azure OpenAI-compatible base URL. Pass to deploy-k8s.ps1 as -FoundryAccountEndpoint; used inside the ops-agent pod as AZURE_OPENAI_ENDPOINT.')
+output accountInferenceEndpoint string = foundry.outputs.accountInferenceEndpoint
+
 @description('Foundry account ARM resource ID.')
 output foundryResourceId string = foundry.outputs.foundryResourceId
 

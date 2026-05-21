@@ -177,7 +177,13 @@ class ZavaOpsAgentExecutor(AgentExecutor):
             raise
 
         assistant_text = _final_assistant_text(result)
-        feasibility = _try_parse_feasibility(assistant_text) or {}
+        # Prefer the canonical feasibility computed by the graph
+        # (Phase 4 fix B2 — deterministic compute_feasibility node).
+        # Fall back to parsing the assistant text if the graph state is
+        # missing it (defensive for older code paths and tests).
+        feasibility = result.get("feasibility") or {}
+        if not feasibility:
+            feasibility = _try_parse_feasibility(assistant_text) or {}
 
         artifact_parts = []
         if feasibility:

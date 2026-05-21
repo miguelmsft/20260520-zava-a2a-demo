@@ -50,6 +50,13 @@ spec:
             - name: OPS_AGENT_PUBLIC_URL
               value: "https://ops-agent.${DNS_ZONE}/"
             - name: AZURE_OPENAI_ENDPOINT
+              # Foundry account inference endpoint (Azure OpenAI-compatible).
+              # Set from main.bicep output `accountInferenceEndpoint`.
+              # Example: https://foundry-zava-demo.services.ai.azure.com
+              value: "${FOUNDRY_ACCOUNT_ENDPOINT}"
+            - name: FOUNDRY_PROJECT_ENDPOINT
+              # Foundry V2 project endpoint (Responses API / AIProjectClient).
+              # Kept for future use (e.g., if we switch to AIProjectClient.get_openai_client()).
               value: "${FOUNDRY_ENDPOINT}"
             - name: AZURE_OPENAI_DEPLOYMENT
               value: "${WORKER_DEPLOYMENT_NAME}"
