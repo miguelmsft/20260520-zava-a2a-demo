@@ -365,9 +365,81 @@ spelling (research §3.5, §3.8). When `enable_v0_3_compat=True` the
 `a2a-sdk` rewrites the v1.0 internal enum
 (`TASK_STATE_COMPLETED`) to the v0.3 string on the wire.
 
+### 4.4 Frontend SSE `a2a_hop` event format
+
+The backend in [`apps/backend/app/agent_client.py`](../apps/backend/app/agent_client.py)
+translates Foundry's internal `a2a_preview_call` / `a2a_preview_call_output`
+function-call signals into a frontend-friendly `a2a_hop` event on the SSE
+stream consumed by the React UI. **One event** is emitted per Foundry
+signal — two when an A2A round-trip starts (`status="started"`) and two
+when it completes (`status="completed"`), for a total of **4 events per
+hop** in a normal exchange.
+
+Shape of a single `a2a_hop` event (all fields present even when null, so
+the frontend reducer can rely on them):
+
+```json
+data: {
+  "type": "a2a_hop",
+  "data": {
+    "tool": "ops-agent-a2a",
+    "call_id": "fc_0d7e3261ae9cb3a0006a0efe70f24c81",
+    "status": "completed",
+    "kind": "a2a_preview_call",
+    "direction": "outbound",
+    "peer_agent": "LangGraph Ops Agent",
+    "arguments": { "message": { "parts": [ { "kind": "text", "text": "..." } ] } },
+    "output": null,
+    "text_preview": "Check feasibility for SKU ZP-7000, quantity 150, requested date 2026-07-15, customer ID CUST-001.",
+    "data_preview": null
+  }
+}
+```
+
+Field reference:
+
+| Field | Meaning | When populated |
+|---|---|---|
+| `tool` | Foundry connection name (the A2A connection in the project) | always |
+| `call_id` | Foundry's function-call ID — pairs the `started` and `completed` events for a hop | always |
+| `status` | `"started"` or `"completed"` | always |
+| `kind` | `"a2a_preview_call"` (outbound) or `"a2a_preview_call_output"` (inbound) | always |
+| `direction` | `"outbound"` when Foundry sends to the worker, `"inbound"` when the worker replies | always |
+| `peer_agent` | Human-readable label for the remote agent (currently hardcoded to `"LangGraph Ops Agent"`) | always |
+| `arguments` | Raw outbound payload (the `params.message` object Foundry POSTs to the worker) | `kind=a2a_preview_call`, `status=completed` |
+| `output` | Raw inbound payload (the worker's reply — string prose or full A2A `result.artifacts[]` tree) | `kind=a2a_preview_call_output`, `status=completed` |
+| `text_preview` | First TextPart extracted from `arguments` or `output`, truncated to 8 KB | `status=completed`, if a TextPart was found |
+| `data_preview` | First DataPart's `data` object extracted from `arguments` or `output`, truncated to 8 KB | `status=completed`, if a DataPart was found |
+
+Notes:
+
+- The preview helpers (`_extract_a2a_previews`, `_walk_parts`,
+  `_coerce_payload`) handle three input shapes:
+  1. **Plain string** — used by the GA Foundry build for inbound `output`.
+     Treated as the text preview directly.
+  2. **JSON-encoded string** — Foundry sometimes wraps `arguments` as a
+     JSON string instead of an object. `_coerce_payload` parses it.
+  3. **Dict/list tree** — full A2A `Task` / `Message` object. Walked
+     recursively (depth-capped at 8) for the first text/data part.
+- **Redaction policy** — every preview is passed through `_redact`,
+  which recursively scrubs any dict key matching
+  `(?i)(authorization|api[-_]?key|x[-_]api[-_]?key|secret|password|token|bearer|cookie)`
+  and replaces the value with `"***REDACTED***"`. This is defence in
+  depth — Foundry should not include credentials in `arguments` /
+  `output`, but if a future build does, the React UI will not display
+  them. Verified by `test_classify_a2a_hop_redacts_secrets_in_arguments`
+  in [`apps/backend/tests/test_agent_client.py`](../apps/backend/tests/test_agent_client.py).
+- The React reducer in
+  [`apps/frontend/src/hooks/useChat.ts`](../apps/frontend/src/hooks/useChat.ts)
+  emits one chat bubble per `status="completed"` event (deduplicating
+  against the `started` pair), and falls back gracefully when older
+  backend builds omit the `direction` / `peer_agent` / `text_preview` /
+  `data_preview` fields (e.g., reading `arguments` directly as the
+  outbound bubble text).
+
 ---
 
-## 5. Authentication & security
+## 5. Authentication &amp; security
 
 ### 5.1 The contract
 

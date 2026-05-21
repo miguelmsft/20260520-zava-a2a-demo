@@ -15,6 +15,7 @@
 import { useCallback, useReducer, useRef } from "react";
 import type {
   AgentEvent,
+  AgentMessage,
   A2AHopData,
   ChartArtifact,
   ChartData,
@@ -34,6 +35,13 @@ import type {
 export interface ChatState {
   messages: ChatMessage[];
   timeline: TimelineEntry[];
+  /**
+   * Final A2A messages exchanged between the Foundry orchestrator and the
+   * LangGraph worker. Rendered as chat bubbles in the Agent Conversation
+   * panel. Only `status === "completed"` hops are pushed here to avoid
+   * duplicating the started/completed event pair.
+   */
+  agentMessages: AgentMessage[];
   chart: ChartArtifact | null;
   isLoading: boolean;
   error: string | null;
@@ -44,6 +52,7 @@ export interface ChatState {
 export const initialChatState: ChatState = {
   messages: [],
   timeline: [],
+  agentMessages: [],
   chart: null,
   isLoading: false,
   error: null,
@@ -154,20 +163,76 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         }
         case "a2a_hop": {
           const d = data as unknown as A2AHopData;
+          const peer = d.peer_agent ?? "LangGraph Ops Agent";
+
+          // Timeline: log every started/completed event for a full
+          // engineering view of the protocol.
+          const timeline = appendTimeline(state, {
+            agent: "LangGraph Ops Agent",
+            kind: "a2a_hop",
+            label:
+              d.direction === "inbound"
+                ? `A2A ← ${peer}`
+                : `A2A → ${peer}`,
+            status: d.status,
+            details:
+              d.text_preview ??
+              (typeof d.arguments === "string"
+                ? d.arguments
+                : d.arguments
+                ? JSON.stringify(d.arguments)
+                : undefined),
+          });
+
+          // Agent Conversation: push one bubble per *completed* hop so we
+          // don't render the started/completed pair twice. We also skip the
+          // legacy ``remote_function_call`` started event entirely (it has
+          // no useful payload yet).
+          let agentMessages = state.agentMessages;
+          if (d.status === "completed") {
+            const direction: "outbound" | "inbound" =
+              d.direction === "inbound" ? "inbound" : "outbound";
+            const sender =
+              direction === "outbound" ? "Foundry CS Agent" : peer;
+            const receiver =
+              direction === "outbound" ? peer : "Foundry CS Agent";
+
+            // Compose the bubble text. Outbound bubbles favor the
+            // text_preview (forwarded prompt); inbound bubbles favor the
+            // text_preview (TextPart prose) and attach data_preview for
+            // structured rendering.
+            const text =
+              d.text_preview ??
+              (typeof d.arguments === "string"
+                ? d.arguments
+                : d.arguments
+                ? JSON.stringify(d.arguments)
+                : direction === "inbound"
+                ? typeof d.output === "string"
+                  ? d.output
+                  : d.output
+                  ? JSON.stringify(d.output)
+                  : ""
+                : "");
+
+            const bubble: AgentMessage = {
+              id: nextId("am"),
+              direction,
+              sender,
+              receiver,
+              text,
+              data: d.data_preview ?? null,
+              raw: direction === "inbound" ? d.output : d.arguments,
+              tool: d.tool,
+              timestamp: Date.now(),
+            };
+            agentMessages = [...state.agentMessages, bubble];
+          }
+
           return {
             ...state,
-            timeline: appendTimeline(state, {
-              agent: "LangGraph Ops Agent",
-              kind: "a2a_hop",
-              label: `A2A → ${d.tool ?? "ops-agent"}`,
-              status: d.status,
-              details:
-                typeof d.arguments === "string"
-                  ? d.arguments
-                  : d.arguments
-                  ? JSON.stringify(d.arguments)
-                  : undefined,
-            }),
+            timeline,
+            agentMessages,
           };
         }
         case "chart": {

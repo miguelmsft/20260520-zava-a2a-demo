@@ -34,7 +34,9 @@ surface unknown types in the UI / logs for diagnosis.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from typing import Any, AsyncGenerator
 
 from azure.ai.projects import AIProjectClient
@@ -49,6 +51,22 @@ logger = logging.getLogger(__name__)
 # raising ``StopIteration`` across the thread boundary (which asyncio cannot
 # propagate cleanly).
 _STREAM_END = object()
+
+# Regex matching dict keys that may carry secrets. Any matching key is
+# replaced with ``"***REDACTED***"`` before the value reaches the SSE stream.
+_SENSITIVE_KEY_RE = re.compile(
+    r"(authorization|api[-_]?key|x[-_]api[-_]?key|secret|password|token|bearer|cookie)",
+    re.IGNORECASE,
+)
+
+# Cap how much of a free-form preview string we emit. Foundry payloads can
+# include a few KB of prose; we keep the bubble readable and avoid bloating
+# the SSE stream.
+_PREVIEW_MAX_CHARS = 2000
+
+# How deep to walk a nested payload before giving up. Defensive guard so a
+# pathological cycle or very deep tree cannot stall the translator.
+_WALK_MAX_DEPTH = 8
 
 
 def _build_user_message(request: ChatRequest) -> str:
@@ -81,6 +99,162 @@ def _safe_getattr(obj: Any, *names: str, default: Any = None) -> Any:
             if value is not None:
                 return value
     return default
+
+
+def _redact(obj: Any, _depth: int = 0) -> Any:
+    """Recursively scrub sensitive keys before payload reaches the SSE wire.
+
+    Walks dicts/lists and replaces any value whose key matches
+    :data:`_SENSITIVE_KEY_RE` with the string ``"***REDACTED***"``. Non-dict
+    primitives and SDK objects (which we cannot safely introspect) are
+    returned as-is. Recursion is depth-capped to keep pathological inputs
+    cheap.
+    """
+
+    if _depth > _WALK_MAX_DEPTH:
+        return obj
+    if isinstance(obj, dict):
+        result: dict[str, Any] = {}
+        for k, v in obj.items():
+            if isinstance(k, str) and _SENSITIVE_KEY_RE.search(k):
+                result[k] = "***REDACTED***"
+            else:
+                result[k] = _redact(v, _depth + 1)
+        return result
+    if isinstance(obj, list):
+        return [_redact(item, _depth + 1) for item in obj]
+    return obj
+
+
+def _coerce_payload(value: Any) -> Any:
+    """Best-effort normalize an SDK value into JSON-friendly Python.
+
+    Strings that look like JSON are parsed; SDK objects with a
+    ``model_dump`` (Pydantic) or ``__dict__`` get flattened. Anything else
+    is returned untouched. Used for the ``arguments`` and ``output`` fields
+    on the ``a2a_hop`` event so the frontend always sees plain
+    dict/list/str/number/bool/None.
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, (dict, list, int, float, bool)):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                return json.loads(stripped)
+            except (ValueError, TypeError):
+                return value
+        return value
+    # Pydantic / azure-ai-projects model — try a structured dump first.
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        try:
+            return dump()  # type: ignore[no-any-return]
+        except Exception:  # pragma: no cover - defensive
+            pass
+    if hasattr(value, "__dict__"):
+        return {k: v for k, v in vars(value).items() if not k.startswith("_")}
+    return value
+
+
+def _walk_parts(payload: Any, _depth: int = 0) -> list[Any]:
+    """Find the first ``parts`` list inside a nested A2A artifact payload.
+
+    A2A's dual-part artifact (R16) nests the payload like::
+
+        {"result": {"artifacts": [{"parts": [{kind: "text", ...},
+                                             {kind: "data", ...}]}]}}
+
+    SDK shapes vary across versions, so we walk dicts and lists looking
+    for the deepest ``parts`` list we can find. Returns ``[]`` if none.
+    """
+
+    if _depth > _WALK_MAX_DEPTH:
+        return []
+    if isinstance(payload, dict):
+        parts = payload.get("parts")
+        if isinstance(parts, list) and parts:
+            return parts
+        for v in payload.values():
+            found = _walk_parts(v, _depth + 1)
+            if found:
+                return found
+    elif isinstance(payload, list):
+        for item in payload:
+            found = _walk_parts(item, _depth + 1)
+            if found:
+                return found
+    return []
+
+
+def _extract_a2a_previews(
+    arguments: Any, output: Any
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Extract a human-readable text preview and a structured data preview.
+
+    For an **outbound** call (``a2a_preview_call``), the orchestrator's
+    message to the worker is in ``arguments``. We return that as the text
+    preview; no data preview is attempted.
+
+    For an **inbound** call (``a2a_preview_call_output``), we look for the
+    A2A dual-part artifact in ``output``: ``TextPart`` text becomes the
+    text preview and ``DataPart`` data becomes the data preview. Falls
+    back to stringifying ``output`` if no parts are found.
+
+    The text preview is truncated at :data:`_PREVIEW_MAX_CHARS` to keep
+    bubbles bounded.
+    """
+
+    text_preview: str | None = None
+    data_preview: dict[str, Any] | None = None
+
+    # ---- Try to extract A2A parts from whichever payload has them ----
+    parts = _walk_parts(output) or _walk_parts(arguments)
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        kind = part.get("kind") or part.get("type")
+        if kind == "text" and text_preview is None:
+            text = part.get("text") or part.get("content")
+            if isinstance(text, str) and text.strip():
+                text_preview = text.strip()
+        elif kind == "data" and data_preview is None:
+            data = part.get("data") or part.get("content")
+            if isinstance(data, dict):
+                data_preview = data
+
+    # ---- Fallbacks if no structured parts were found ----
+    if text_preview is None:
+        # Outbound: arguments is typically a dict {"message": "..."} or a
+        # plain string with the forwarded prompt.
+        if isinstance(arguments, dict):
+            for key in ("message", "text", "input", "content", "prompt"):
+                value = arguments.get(key)
+                if isinstance(value, str) and value.strip():
+                    text_preview = value.strip()
+                    break
+            if text_preview is None:
+                try:
+                    text_preview = json.dumps(arguments, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    text_preview = str(arguments)
+        elif isinstance(arguments, str) and arguments.strip():
+            text_preview = arguments.strip()
+        elif isinstance(output, str) and output.strip():
+            text_preview = output.strip()
+        elif isinstance(output, dict):
+            try:
+                text_preview = json.dumps(output, ensure_ascii=False)
+            except (TypeError, ValueError):
+                text_preview = str(output)
+
+    if text_preview is not None and len(text_preview) > _PREVIEW_MAX_CHARS:
+        text_preview = text_preview[: _PREVIEW_MAX_CHARS - 1] + "…"
+
+    return text_preview, data_preview
 
 
 def _classify_event(event: Any) -> AgentEvent:
@@ -121,6 +295,28 @@ def _classify_event(event: Any) -> AgentEvent:
             output_payload = _safe_getattr(
                 item, "output", "result", "response", "content", default=None,
             )
+            raw_arguments = _safe_getattr(item, "arguments", default=None)
+
+            # Normalize SDK objects / JSON-string blobs into plain Python so
+            # the frontend never has to know about Pydantic models, and so
+            # redaction can walk the tree.
+            arguments_obj = _coerce_payload(raw_arguments)
+            output_obj = _coerce_payload(output_payload)
+
+            arguments_redacted = _redact(arguments_obj)
+            output_redacted = _redact(output_obj)
+
+            # Direction: input items go *to* the worker (outbound); output
+            # items carry the reply *from* the worker (inbound). The legacy
+            # ``remote_function_call`` only appears on the input side.
+            direction = (
+                "inbound" if item_type == "a2a_preview_call_output" else "outbound"
+            )
+
+            text_preview, data_preview = _extract_a2a_previews(
+                arguments_redacted, output_redacted
+            )
+
             return AgentEvent(
                 type="a2a_hop",
                 data={
@@ -128,8 +324,12 @@ def _classify_event(event: Any) -> AgentEvent:
                     "call_id": _safe_getattr(item, "id", "call_id", default=""),
                     "status": status,
                     "kind": item_type,
-                    "arguments": _safe_getattr(item, "arguments", default=None),
-                    "output": output_payload,
+                    "direction": direction,
+                    "peer_agent": "LangGraph Ops Agent",
+                    "arguments": arguments_redacted,
+                    "output": output_redacted,
+                    "text_preview": text_preview,
+                    "data_preview": data_preview,
                 },
             )
 

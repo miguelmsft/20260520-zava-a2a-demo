@@ -5,25 +5,34 @@
  *   │              │  Chat panel (top)             │
  *   │ Order form   │                               │
  *   │ (sidebar)    ├───────────────────────────────┤
- *   │              │  A2A activity timeline        │
+ *   │              │  Tabbed view (bottom):        │
+ *   │              │  • Agent Conversation (def.)  │
+ *   │              │  • Activity Timeline          │
  *   └──────────────┴───────────────────────────────┘
  */
 
+import { useState } from "react";
 import { OrderForm } from "./components/OrderForm";
 import { ChatPanel } from "./components/ChatPanel";
 import { A2ATimeline } from "./components/A2ATimeline";
+import { AgentConversation } from "./components/AgentConversation";
 import { useChat } from "./hooks/useChat";
+
+type BottomTab = "conversation" | "timeline";
 
 export function App() {
   const {
     messages,
     timeline,
+    agentMessages,
     chart,
     isLoading,
     error,
     sendMessage,
     reset,
   } = useChat();
+
+  const [bottomTab, setBottomTab] = useState<BottomTab>("conversation");
 
   return (
     <div className="app">
@@ -57,7 +66,48 @@ export function App() {
             />
           </div>
           <div className="app__main-bottom">
-            <A2ATimeline entries={timeline} />
+            <div
+              className="tabs"
+              role="tablist"
+              aria-label="Bottom pane view"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={bottomTab === "conversation"}
+                className={`tab ${bottomTab === "conversation" ? "tab--active" : ""}`}
+                onClick={() => setBottomTab("conversation")}
+                data-testid="tab-conversation"
+              >
+                Agent Conversation
+                {agentMessages.length > 0 && (
+                  <span className="tab__badge">{agentMessages.length}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={bottomTab === "timeline"}
+                className={`tab ${bottomTab === "timeline" ? "tab--active" : ""}`}
+                onClick={() => setBottomTab("timeline")}
+                data-testid="tab-timeline"
+              >
+                Activity Timeline
+                {timeline.length > 0 && (
+                  <span className="tab__badge">{timeline.length}</span>
+                )}
+              </button>
+            </div>
+            <div className="tab-panel" role="tabpanel">
+              {bottomTab === "conversation" ? (
+                <AgentConversation
+                  messages={agentMessages}
+                  isLoading={isLoading}
+                />
+              ) : (
+                <A2ATimeline entries={timeline} />
+              )}
+            </div>
           </div>
         </main>
       </div>

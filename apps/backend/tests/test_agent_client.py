@@ -15,7 +15,13 @@ os.environ.setdefault("DEV_MODE", "true")
 
 import pytest  # noqa: E402
 
-from app.agent_client import _build_user_message, _classify_event  # noqa: E402
+from app.agent_client import (  # noqa: E402
+    _build_user_message,
+    _classify_event,
+    _coerce_payload,
+    _extract_a2a_previews,
+    _redact,
+)
 from app.models import AgentEvent, ChatRequest, HealthResponse  # noqa: E402
 
 
@@ -128,6 +134,121 @@ def test_classify_a2a_hop() -> None:
     assert evt.type == "a2a_hop"
     assert evt.data["call_id"] == "call_123"
     assert evt.data["status"] == "started"
+    # Phase-8 enrichment: every A2A hop carries direction + peer name.
+    assert evt.data["direction"] == "outbound"
+    assert evt.data["peer_agent"] == "LangGraph Ops Agent"
+
+
+def test_classify_a2a_preview_call_outbound_text_preview() -> None:
+    """``a2a_preview_call`` (input) yields outbound + text preview of args."""
+
+    item = _Obj(
+        type="a2a_preview_call",
+        id="call_outbound_1",
+        name="ops_agent",
+        arguments='{"message": "Check feasibility for SKU ZP-7000, qty 150."}',
+    )
+    evt = _classify_event(_Obj(type="response.output_item.done", item=item))
+    assert evt.type == "a2a_hop"
+    assert evt.data["status"] == "completed"
+    assert evt.data["direction"] == "outbound"
+    assert evt.data["kind"] == "a2a_preview_call"
+    # Coerce stringified-JSON args back into a dict for the frontend.
+    assert isinstance(evt.data["arguments"], dict)
+    assert evt.data["arguments"]["message"].startswith("Check feasibility")
+    # Text preview is extracted from the ``message`` field of the args.
+    assert "Check feasibility" in (evt.data["text_preview"] or "")
+    assert evt.data["data_preview"] is None
+
+
+def test_classify_a2a_preview_call_output_inbound_dual_part() -> None:
+    """``a2a_preview_call_output`` (output) emits inbound + text + data preview."""
+
+    artifact = {
+        "result": {
+            "artifacts": [
+                {
+                    "parts": [
+                        {"kind": "text", "text": "We can fulfill 120 of 150 units."},
+                        {
+                            "kind": "data",
+                            "data": {
+                                "feasibility_score": 0.8,
+                                "can_fulfill": False,
+                                "total_fulfillable": 120,
+                                "requested_quantity": 150,
+                            },
+                        },
+                    ]
+                }
+            ]
+        }
+    }
+    item = _Obj(
+        type="a2a_preview_call_output",
+        id="call_inbound_1",
+        name="ops_agent",
+        output=artifact,
+    )
+    evt = _classify_event(_Obj(type="response.output_item.done", item=item))
+    assert evt.type == "a2a_hop"
+    assert evt.data["direction"] == "inbound"
+    assert evt.data["kind"] == "a2a_preview_call_output"
+    assert evt.data["text_preview"] == "We can fulfill 120 of 150 units."
+    assert isinstance(evt.data["data_preview"], dict)
+    assert evt.data["data_preview"]["feasibility_score"] == 0.8
+    assert evt.data["data_preview"]["total_fulfillable"] == 120
+
+
+def test_redact_scrubs_sensitive_keys_recursively() -> None:
+    payload = {
+        "message": "ok",
+        "Authorization": "Bearer secret-abc",
+        "headers": {"x-api-key": "xyz", "Cookie": "sid=1"},
+        "items": [{"api_key": "k1"}, {"safe": "value"}],
+    }
+    redacted = _redact(payload)
+    assert redacted["message"] == "ok"
+    assert redacted["Authorization"] == "***REDACTED***"
+    assert redacted["headers"]["x-api-key"] == "***REDACTED***"
+    assert redacted["headers"]["Cookie"] == "***REDACTED***"
+    assert redacted["items"][0]["api_key"] == "***REDACTED***"
+    assert redacted["items"][1]["safe"] == "value"
+
+
+def test_coerce_payload_parses_json_strings() -> None:
+    assert _coerce_payload('{"a": 1}') == {"a": 1}
+    assert _coerce_payload("[1, 2, 3]") == [1, 2, 3]
+    # Plain strings survive.
+    assert _coerce_payload("hello") == "hello"
+    # None / primitives pass through.
+    assert _coerce_payload(None) is None
+    assert _coerce_payload(42) == 42
+
+
+def test_extract_a2a_previews_outbound_plain_string() -> None:
+    text, data = _extract_a2a_previews("Forward this to ops.", None)
+    assert text == "Forward this to ops."
+    assert data is None
+
+
+def test_classify_a2a_hop_redacts_secrets_in_arguments() -> None:
+    """Sensitive keys in arguments must be scrubbed before reaching the wire."""
+
+    item = _Obj(
+        type="a2a_preview_call",
+        id="call_redact_1",
+        name="ops_agent",
+        arguments={
+            "message": "Check feasibility for SKU ZP-7000.",
+            "headers": {"authorization": "Bearer top-secret"},
+        },
+    )
+    evt = _classify_event(_Obj(type="response.output_item.done", item=item))
+    assert evt.type == "a2a_hop"
+    assert evt.data["arguments"]["headers"]["authorization"] == "***REDACTED***"
+    # Public message survives redaction.
+    assert "ZP-7000" in evt.data["arguments"]["message"]
 
 
 def test_classify_tool_call_done() -> None:

@@ -68,3 +68,8 @@ infra/**/*.json
 # Wave 2 build artifacts
 tsconfig.tsbuildinfo
 dist/
+
+# Playwright e2e
+playwright-report/
+test-results/
+playwright/.cache/

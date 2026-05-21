@@ -155,7 +155,12 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
-Open **http://localhost:5173** and ask: *"Can we ship 150 ZP-7000 pumps to Apex Hydraulics by July 15?"* — you should see A2A hops light up in the timeline and a feasibility chart render in the response.
+Open **http://localhost:5173** and ask: *"Can we ship 150 ZP-7000 pumps to Apex Hydraulics by July 15?"* — submit the order form and watch the bottom pane:
+
+- **Agent Conversation** tab (default) — shows the actual A2A messages exchanged between the Foundry Customer Service Agent and the LangGraph Ops Agent as chat bubbles, with sender/receiver labels, the human-readable text payload of each hop, and a *Show raw JSON* toggle for the full A2A envelope (sensitive headers are redacted server-side).
+- **Activity Timeline** tab — every internal event from Foundry (status, tool calls, code-interpreter output, A2A hop markers, text deltas, completion) for deep-dive diagnostics.
+
+A feasibility chart from Code Interpreter renders inline in the response when the worker reply includes a chart-friendly DataPart.
 
 ### Environment variables
 
