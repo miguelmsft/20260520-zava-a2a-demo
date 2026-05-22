@@ -341,6 +341,7 @@ If your test_agent.py runs left orphan agents or A2A connections you want gone b
 - [`docs/architecture.md`](./architecture.md) — the deployed Azure components, identity model, and cost breakdown.
 - [`docs/technology.md`](./technology.md) — the implementation details (Foundry V2 + LangGraph + React + FastAPI).
 - [`docs/a2a-foundry-walkthrough.md`](./a2a-foundry-walkthrough.md) — beginner-friendly, copy-paste walkthrough of A2A in a Foundry V2 agent.
+- [`docs/a2a-mutual-discovery.md`](./a2a-mutual-discovery.md) — how to make the Foundry agent and the AKS agent discover **each other** (bidirectional A2A).
 - [`docs/a2a-implementation.md`](./a2a-implementation.md) — A2A protocol deep-dive: wire format, auth, dual-part artifact pattern, version interop.
 - [`docs/private-vnet-considerations.md`](./private-vnet-considerations.md) — guidance for hardened / private-VNet deployments.
 - [`docs/deployment-learnings.md`](./deployment-learnings.md) — As-deployed notes and GA-specific workarounds from a successful end-to-end run.

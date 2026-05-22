@@ -231,6 +231,7 @@ All documentation lives in [`docs/`](docs/):
 - **[`docs/use-case.md`](docs/use-case.md)** — Zava company profile, business problem, personas, data model, full interaction walkthrough.
 - **[`docs/technology.md`](docs/technology.md)** — Detailed component stack, SDK selection rationale, code patterns, observability, model strategy.
 - **[`docs/a2a-foundry-walkthrough.md`](docs/a2a-foundry-walkthrough.md)** — **Start here for A2A**: a beginner-friendly, copy-paste walkthrough of how to implement A2A in a Foundry V2 agent, grounded in this repo's actual code.
+- **[`docs/a2a-mutual-discovery.md`](docs/a2a-mutual-discovery.md)** — How to make the Foundry agent and the AKS agent discover **each other** (bidirectional A2A): enables the missing AKS → Foundry direction with REST/SDK steps, RBAC matrix, and end-to-end verification.
 - **[`docs/a2a-implementation.md`](docs/a2a-implementation.md)** — Wire-level A2A reference: protocol version, Agent Card, JSON-RPC `message/send`, dual-part artifact pattern, auth, error handling.
 - **[`docs/architecture.md`](docs/architecture.md)** — Azure resource inventory, RBAC matrix, network flow, K8s objects, failure modes, cost envelope, scaling vectors.
 - **[`docs/private-vnet-considerations.md`](docs/private-vnet-considerations.md)** — What it would take to run this on a private VNet: what Foundry V2 + A2A supports today, gaps, and a hardened-architecture sketch.
