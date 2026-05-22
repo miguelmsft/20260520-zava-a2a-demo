@@ -95,6 +95,14 @@ var foundryAccountOwnerRoleId = 'e47c6f54-e4a2-4754-9501-8e0985b135e1'
 // GUID per research/2026-05-20-aks.md §3.2 + Azure built-in roles documentation.
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
+// Log Analytics Reader: read access to App Insights / Log Analytics traces.
+// Required for the deployer (or any demo user) to see the Foundry portal
+// Agents → Traces tab populate — the portal queries App Insights on behalf
+// of the user, so without this role the tab appears empty even if traces
+// are flowing into App Insights.
+// GUID per research/2026-05-21-foundry-agent-traces.md §2.2.
+var logAnalyticsReaderRoleId = '73c42c96-874c-492b-b04d-ab87d138a893'
+
 // -----------------------------------------------------------------------------
 // Modules
 // -----------------------------------------------------------------------------
@@ -133,6 +141,22 @@ module appInsights 'modules/appinsights.bicep' = {
     appInsightsName: appInsightsName
     logAnalyticsName: logAnalyticsName
     tags: tags
+  }
+}
+
+// Connect App Insights to the Foundry account so the portal Traces tab
+// (Agents → Traces in the Foundry portal) populates with server-side traces
+// emitted by Foundry prompt agents. The connection is scoped to the account
+// with isSharedToAll: true so all projects (current and future) under the
+// account inherit it. Per research/2026-05-21-foundry-agent-traces.md §2/§5,
+// this single connection is the only configuration required for prompt-agent
+// server-side traces (GA) to appear in the portal — no SDK changes needed.
+module foundryAppInsightsConnection 'modules/foundry-appinsights-connection.bicep' = {
+  name: 'foundry-appinsights-connection-deploy'
+  params: {
+    foundryAccountName: foundry.outputs.foundryAccountName
+    appInsightsResourceId: appInsights.outputs.appInsightsId
+    appInsightsConnectionString: appInsights.outputs.appInsightsConnectionString
   }
 }
 
@@ -260,6 +284,33 @@ resource aksKubeletAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 }
 
 // -----------------------------------------------------------------------------
+// RBAC — grant the deployer 'Log Analytics Reader' on App Insights
+// -----------------------------------------------------------------------------
+// Required so the Foundry portal's Agents → Traces tab can render traces on
+// behalf of the user. Foundry Account Owner does NOT inherit to App Insights
+// (separate resource provider — Microsoft.Insights/components), so we must
+// grant the read role explicitly. Per research/2026-05-21-foundry-agent-traces.md
+// §2.2 "Developer viewing traces → Application Insights → Log Analytics Reader".
+
+resource appInsightsResource 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: appInsightsName
+  dependsOn: [
+    appInsights
+  ]
+}
+
+resource deployerLogAnalyticsReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: appInsightsResource
+  name: guid(resourceGroup().id, appInsightsName, deployerPrincipalId, logAnalyticsReaderRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', logAnalyticsReaderRoleId)
+    principalId: deployerPrincipalId
+    principalType: deployerPrincipalType
+    description: 'Log Analytics Reader for the demo deployer — required to view Foundry agent traces in the portal Traces tab.'
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 
@@ -305,6 +356,9 @@ output appInsightsName string = appInsights.outputs.appInsightsName
 
 @description('Application Insights connection string. Used by app SDKs / OpenTelemetry exporters and to wire Foundry project tracing post-deploy.')
 output appInsightsConnectionString string = appInsights.outputs.appInsightsConnectionString
+
+@description('Name of the Foundry → App Insights connection on the Foundry account. Verifies the Traces tab wiring is in place.')
+output foundryAppInsightsConnectionName string = foundryAppInsightsConnection.outputs.connectionName
 
 @description('Log Analytics workspace ARM resource ID (used by AKS Container Insights addon in Step 6).')
 output logAnalyticsWorkspaceId string = appInsights.outputs.logAnalyticsWorkspaceId

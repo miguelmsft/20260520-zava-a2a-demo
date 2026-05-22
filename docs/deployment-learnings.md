@@ -8,7 +8,7 @@
 > corrections are committed to the repository — this doc explains *why* they
 > exist so future operators do not get tripped up by the same gaps.
 
-Last updated: 2026-05-21
+Last updated: 2026-05-22
 
 ---
 
@@ -451,13 +451,136 @@ fork or copy these scripts, keep that snippet.
 | --- | --- | --- |
 | `api-version` removal | `apps/backend/app/agent_client.py`, `apps/backend/app/config.py`, `apps/foundry-agent/test_agent.py` | Conditional `default_query` only when env var is set; default api version = `""` |
 | `agent_reference` `type` field | `apps/backend/app/agent_client.py`, `apps/foundry-agent/test_agent.py` | Added `type: "agent_reference"` |
+| `agent_reference` `id` field for portal Traces tab | `apps/backend/app/agent_client.py`, `apps/foundry-agent/test_agent.py` | Added `id: <agent>:<version>` via new `_resolve_agent_reference()` helper; required to attribute spans to the agent in the portal |
 | `model` = bound deployment | `apps/backend/app/config.py`, `apps/backend/app/agent_client.py`, `apps/foundry-agent/test_agent.py` | New `FOUNDRY_ORCHESTRATOR_DEPLOYMENT` env var |
 | A2A event names | `apps/backend/app/agent_client.py`, `apps/foundry-agent/test_agent.py` | Accept `a2a_preview_call*` AND `remote_function_call` |
 | Sandbox chart detection | `apps/backend/app/agent_client.py`, `apps/foundry-agent/test_agent.py` | Scan `message` content for `sandbox:` markdown |
 | Natural-language parser | `apps/ops-agent/app/agent.py` | NL fallback patterns for SKU/qty/customer/date when orchestrator forwards free-form text |
+| App Insights → Foundry account connection (Traces tab) | `infra/main.bicep`, `infra/modules/foundry-appinsights-connection.bicep` | New connection module + role assignment; required for Foundry portal Traces tab to populate |
 | Key Vault purge protection | `infra/modules/keyvault.bicep` | `enablePurgeProtection: true` |
 | AKS SKU | `infra/modules/aks.bicep`, `scripts/verify-quota.ps1` | `Standard_D2s_v6` default |
 | `-NonInteractive` deploy switch | `scripts/deploy-infra.ps1` | Skip Read-Host in autopilot |
 | Cert auto-detect | `scripts/deploy-infra.ps1` | Skip cert prompt if cert already present in KV |
 | StrictMode pipeline fix | `scripts/deploy-k8s.ps1` | Wrap `Select-Object -Unique` in `@(...)` |
 | Foundry account endpoint plumbing | `scripts/deploy-infra.ps1`, `scripts/deploy-k8s.ps1` | Reads `accountInferenceEndpoint`, threads through to pod env |
+
+---
+
+## 8. Foundry Agent Traces — wiring App Insights to Foundry account
+
+**Date added: 2026-05-22.** When the Zava demo was first deployed, the
+Foundry portal's **Agents → `zava-customer-service` → Traces** tab was
+empty even though the agent was being invoked successfully. The root cause
+was a missing wiring step: prompt agents auto-emit server-side traces, but
+**Foundry only forwards those traces to App Insights once an explicit
+account-level connection exists**. Two changes were required.
+
+### 8.1 Infra: App Insights connection on the Foundry account
+
+A new Bicep module ([`infra/modules/foundry-appinsights-connection.bicep`](../infra/modules/foundry-appinsights-connection.bicep))
+declares the connection on the Foundry **account** (not the project) using
+the verbatim shape from `microsoft-foundry/foundry-samples`:
+
+```bicep
+resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/connections@2025-04-01-preview' = {
+  name: '${foundryAccount.name}-appinsights'
+  parent: foundryAccount
+  properties: {
+    category: 'AppInsights'   // exact casing — not 'ApplicationInsights'
+    target: appInsightsResourceId
+    authType: 'ApiKey'
+    isSharedToAll: true
+    credentials: { key: appInsightsConnectionString }
+    metadata: { ApiType: 'Azure', ResourceId: appInsightsResourceId }
+  }
+}
+```
+
+Notes:
+- The connection lives at **account scope**, not project scope. There is
+  one Foundry account per region/RG; child projects inherit the connection
+  thanks to `isSharedToAll: true`.
+- `credentials.key` is the **connection string**, not the instrumentation
+  key. Confusing these silently breaks ingestion.
+- `category` is `AppInsights` (one word, both caps). Other casings cause
+  the deploy to succeed but no telemetry flows.
+- The connection is idempotent. Redeploying with the same `name` and
+  parameters is a no-op.
+
+The main template also grants the deployer **Log Analytics Reader**
+(`73c42c96-874c-492b-b04d-ab87d138a893`) on the App Insights component so
+the operator can read the traces in the portal Traces tab and via KQL.
+
+### 8.2 Code: pass `agent_reference.id` on every `responses.create()`
+
+Server-side traces only get attributed to a specific agent when the
+**agent ID** is passed in the request. Without it, spans are named
+generically (`chat <model>`) and the portal Traces tab cannot filter by
+agent. With it, spans are named `invoke_agent <agent-id>` and the Traces
+tab populates correctly.
+
+`apps/backend/app/agent_client.py` resolves the latest agent version once
+per process (cached at module scope) and includes the ID on every request:
+
+```python
+def _resolve_agent_reference(project, agent_name):
+    versions = project.agents.list_versions(
+        agent_name=agent_name, order="desc", limit=1
+    )
+    latest = next(iter(versions), None)
+    if latest is not None and getattr(latest, "id", None):
+        return {"type": "agent_reference", "name": agent_name, "id": latest.id}
+    return {"type": "agent_reference", "name": agent_name}  # graceful fallback
+```
+
+The resolver is wrapped in a threading.Lock-protected cache so it runs at
+most once per agent name per process. If the version lookup fails for any
+reason, the request still goes through with name only (degraded — no
+agent-level Traces filtering, but the agent still runs).
+
+### 8.3 Verify: KQL one-liner
+
+After a chat request, wait 2-5 minutes for ingestion, then:
+
+```kql
+dependencies
+| where timestamp > ago(30m)
+| where customDimensions has 'gen_ai' or customDimensions has 'foundry'
+| project timestamp, name, success,
+         agent_id=tostring(customDimensions['gen_ai.agent.id']),
+         span_type=tostring(customDimensions['span_type'])
+| order by timestamp desc | take 15
+```
+
+Or from PowerShell:
+
+```powershell
+az monitor app-insights query `
+  -g rg-zava-a2a-smart-order-demo `
+  --app appi-zava-a2a-smart-order `
+  --analytics-query "<the KQL above>" -o table
+```
+
+A working trace looks like:
+
+```
+2026-05-22T12:27:09.754261Z  invoke_agent zava-customer-service:1  False  zava-customer-service:1  agent
+```
+
+Span name starts with `invoke_agent`, `agent_id` matches the agent, and
+`span_type=agent`. (Here `success=False` because the downstream A2A call
+to a stopped AKS service failed — but the trace itself is intact.)
+
+### 8.4 Gotchas
+
+- **Ingestion lag.** Traces take 2-5 minutes to appear in the portal. If
+  KQL returns nothing, wait longer before assuming the wiring is wrong.
+- **Sampling.** App Insights default-samples at 5 req/s. For demos with
+  bursty traffic, this is fine; for high-volume probes it can drop spans.
+- **The connection's `target` is the full ARM resource ID**, not the
+  instrumentation key and not the connection string. Easy to mix up.
+- **AKS being stopped does not break traces.** The Foundry agent still
+  runs, the span is still emitted, and the trace shows `success=False`
+  with the A2A timeout as the cause. Useful for debugging downstream
+  failures.
+

@@ -37,6 +37,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 from typing import Any, AsyncGenerator
 
 from azure.ai.projects import AIProjectClient
@@ -52,6 +53,19 @@ logger = logging.getLogger(__name__)
 # raising ``StopIteration`` across the thread boundary (which asyncio cannot
 # propagate cleanly).
 _STREAM_END = object()
+
+# Cache of the resolved Foundry agent_reference payload keyed by agent name.
+# Populated lazily on the first ``_open_stream`` call so we look up the
+# agent's ``id`` exactly once per process. The ``id`` (in addition to
+# ``name``) is required for traces emitted by the Responses API to surface
+# under the agent's Traces tab in the Foundry portal.
+#
+# Per the azure-ai-projects README — Tracing section: "In order to view the
+# traces in the Microsoft Foundry portal, the agent ID should be passed in
+# as part of the response generation request."
+# See research/2026-05-21-foundry-agent-traces.md §3.4.
+_AGENT_REFERENCE_CACHE: dict[str, dict[str, str]] = {}
+_AGENT_REFERENCE_LOCK = threading.Lock()
 
 # Regex matching dict keys that may carry secrets. Any matching key is
 # replaced with ``"***REDACTED***"`` before the value reaches the SSE stream.
@@ -434,6 +448,65 @@ def _classify_event(event: Any) -> AgentEvent:
     return AgentEvent(type="status", data={"event": event_type or "unknown"})
 
 
+def _resolve_agent_reference(
+    project: AIProjectClient, agent_name: str
+) -> dict[str, str]:
+    """Return the ``agent_reference`` payload for ``responses.create()``.
+
+    Looks up the latest version of the named prompt agent so the agent's
+    ``id`` can be included alongside ``name``. The ``id`` is required for
+    Responses-API traces to surface under the agent's Traces tab in the
+    Foundry portal (per the azure-ai-projects README — Tracing section).
+
+    Falls back to a name-only payload if the lookup fails (transient network
+    error, RBAC, SDK version mismatch). The agent invocation still works,
+    but the trace may surface under a generic ``chat`` span instead of
+    ``invoke_agent <name>``.
+
+    Result is cached at module scope so the lookup runs exactly once per
+    process / agent name.
+    """
+
+    cached = _AGENT_REFERENCE_CACHE.get(agent_name)
+    if cached is not None:
+        return cached
+
+    with _AGENT_REFERENCE_LOCK:
+        cached = _AGENT_REFERENCE_CACHE.get(agent_name)
+        if cached is not None:
+            return cached
+
+        ref: dict[str, str] = {"type": "agent_reference", "name": agent_name}
+        try:
+            versions = project.agents.list_versions(
+                agent_name=agent_name, order="desc", limit=1
+            )
+            latest = next(iter(versions), None)
+            if latest is not None and getattr(latest, "id", None):
+                ref["id"] = latest.id
+                logger.info(
+                    "Resolved Foundry agent id for %r: %s (version=%s)",
+                    agent_name,
+                    latest.id,
+                    getattr(latest, "version", "?"),
+                )
+            else:
+                logger.warning(
+                    "No versions found for Foundry agent %r — passing name only.",
+                    agent_name,
+                )
+        except Exception as exc:  # noqa: BLE001 — best-effort lookup
+            logger.warning(
+                "Failed to resolve agent id for %r (%s: %s) — passing name only.",
+                agent_name,
+                type(exc).__name__,
+                exc,
+            )
+
+        _AGENT_REFERENCE_CACHE[agent_name] = ref
+        return ref
+
+
 def _open_stream(request: ChatRequest):
     """Open a synchronous Foundry Responses stream and return its iterator.
 
@@ -468,10 +541,9 @@ def _open_stream(request: ChatRequest):
         "input": user_message,
         "stream": True,
         "extra_body": {
-            "agent_reference": {
-                "type": "agent_reference",
-                "name": settings.foundry_agent_name,
-            },
+            "agent_reference": _resolve_agent_reference(
+                project, settings.foundry_agent_name
+            ),
         },
     }
     if request.conversation_id:

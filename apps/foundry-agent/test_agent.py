@@ -128,6 +128,35 @@ def main(argv: Optional[list[str]] = None) -> int:  # noqa: ARG001
             endpoint=project_endpoint,
             credential=DefaultAzureCredential(),
         ) as project:
+            # Resolve the latest version of the agent so we can pass its
+            # ``id`` (in addition to ``name``) in ``agent_reference``. Per
+            # the azure-ai-projects README — Tracing section, the agent ID
+            # must be passed for traces to surface under the agent's
+            # Traces tab in the Foundry portal. Falls back to name-only
+            # if the lookup fails — the smoke test still verifies the
+            # streaming pipeline, just without rich trace attribution.
+            agent_reference: dict[str, Any] = {
+                "type": "agent_reference",
+                "name": agent_name,
+            }
+            try:
+                versions = project.agents.list_versions(
+                    agent_name=agent_name, order="desc", limit=1
+                )
+                latest = next(iter(versions), None)
+                if latest is not None and getattr(latest, "id", None):
+                    agent_reference["id"] = latest.id
+                    print(
+                        f"Agent id         : {latest.id} "
+                        f"(version={getattr(latest, 'version', '?')})"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"WARN: could not resolve agent id ({type(exc).__name__}: {exc}). "
+                    "Smoke test will continue with name-only agent_reference.",
+                    file=sys.stderr,
+                )
+
             # The Foundry SDK returns a sync `openai.OpenAI` wired to the
             # project's `/openai/v1/` endpoint. The GA endpoint rejects an
             # `api-version` query parameter; only pass it if the user
@@ -144,12 +173,7 @@ def main(argv: Optional[list[str]] = None) -> int:  # noqa: ARG001
                 model=orchestrator_deployment,
                 input=SAMPLE_QUERY,
                 stream=True,
-                extra_body={
-                    "agent_reference": {
-                        "type": "agent_reference",
-                        "name": agent_name,
-                    }
-                },
+                extra_body={"agent_reference": agent_reference},
             )
 
             for event in stream:
