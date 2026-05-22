@@ -103,6 +103,18 @@ var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 // GUID per research/2026-05-21-foundry-agent-traces.md §2.2.
 var logAnalyticsReaderRoleId = '73c42c96-874c-492b-b04d-ab87d138a893'
 
+// Foundry User (a.k.a. "Azure AI User"): data-plane access to Foundry projects.
+// Includes the data action `Microsoft.CognitiveServices/*` which covers reading
+// project connections, listing/getting/creating/invoking agents, and similar
+// data-plane operations the Foundry SDK performs. Foundry Account Owner is a
+// control-plane role only — without this role, the SDK calls
+// project.connections.get(...) and project.agents.list(...) return
+// PermissionDenied with the missing-data-action message and freshly-deployed
+// agents/connections appear "not found" to the deployer.
+// GUID per research/2026-05-20-foundry-v2.md §4 + identity.bicep (where the
+// same role is granted to the workload-identity UAMI).
+var foundryUserRoleId = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
+
 // -----------------------------------------------------------------------------
 // Modules
 // -----------------------------------------------------------------------------
@@ -248,6 +260,30 @@ resource deployerFoundryOwner 'Microsoft.Authorization/roleAssignments@2022-04-0
     principalId: deployerPrincipalId
     principalType: deployerPrincipalType
     description: 'Foundry Account Owner for the demo deployer (granted by main.bicep Step 3).'
+  }
+}
+
+// -----------------------------------------------------------------------------
+// RBAC — grant the deployer 'Foundry User' (data-plane) on the Foundry account
+// -----------------------------------------------------------------------------
+// Foundry Account Owner is a control-plane role. The Foundry SDK calls used by
+// scripts/setup-foundry-agent.ps1 (`projects.connections.get`,
+// `projects.agents.list`, `projects.agents.create`) and by the front-end / test
+// scripts at demo time are data-plane operations that require the
+// `Microsoft.CognitiveServices/*` data action. Without this assignment a
+// freshly-deployed Foundry shows existing connections / agents as "not found"
+// to the deployer and create_a2a_connection.py --verify fails with a
+// PermissionDenied error referencing the missing
+// `Microsoft.CognitiveServices/accounts/AIServices/agents/read` data action.
+
+resource deployerFoundryUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: foundryAccountResource
+  name: guid(resourceGroup().id, foundryName, deployerPrincipalId, foundryUserRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', foundryUserRoleId)
+    principalId: deployerPrincipalId
+    principalType: deployerPrincipalType
+    description: 'Foundry User (data plane) for the demo deployer — required for the Foundry SDK to read connections / list / create agents on behalf of the deployer.'
   }
 }
 

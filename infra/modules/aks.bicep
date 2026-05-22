@@ -22,10 +22,13 @@
 //     so Step 7 can grant it Key Vault Certificate User + DNS Zone Contributor.
 //   - addonProfiles.omsagent — Container Insights, wired to the Log Analytics
 //     workspace from Step 5.
-//   - System node pool: 1 node default with autoscaler 1–2, Standard_D2as_v6
-//     (2 vCPU / 8 GiB AMD, Linux, 30 GiB OS disk). Switched from Standard_D2s_v6
-//     because that Intel SKU is currently unavailable in eastus2 (confirmed via
-//     AKS-side allowed-SKUs error during a fresh deploy on 2026-05-21).
+//   - System node pool: 1 node default with autoscaler 1–2, Standard_D2as_v5
+//     (2 vCPU / 8 GiB AMD, Linux, 30 GiB OS disk). MCAPS subscriptions in
+//     eastus2 currently don't grant v6 D-series — confirmed via AKS-side
+//     allowed-SKUs error during fresh deploys on 2026-05-22. v5 AMD is the
+//     closest reliably-available match. The earlier live AKS in
+//     rg-zava-a2a-smart-order-demo was provisioned on D2as_v6 before this
+//     restriction took effect; existing clusters keep running on v6.
 //
 // kubernetesVersion: intentionally omitted — AKS picks the current N-1 default
 // per research/2026-05-20-aks.md §2.2, avoiding churn as versions rotate.
@@ -95,7 +98,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2026-02-01' = {
         name: 'system'
         mode: 'System'
         osType: 'Linux'
-        vmSize: 'Standard_D2as_v6'
+        vmSize: 'Standard_D2as_v5'
         osDiskSizeGB: 30
         count: 1
         minCount: 1

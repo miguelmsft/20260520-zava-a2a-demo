@@ -47,8 +47,14 @@ spec:
             - name: DATA_DIR
               value: "/srv/data"
             # --- Substituted by deploy script ---
+            # OPS_AGENT_PUBLIC_URL is the URL the agent advertises in its A2A
+            # AgentCard ("url" field). In DnsZone mode the deploy script
+            # substitutes a https://ops-agent.<zone>/ URL here directly. In
+            # sslip.io mode the deploy script first applies the manifest with a
+            # placeholder value, then `kubectl set env` overrides it once the
+            # ingress LB IP is known (see scripts/deploy-k8s.ps1).
             - name: OPS_AGENT_PUBLIC_URL
-              value: "https://ops-agent.${DNS_ZONE}/"
+              value: "${OPS_AGENT_PUBLIC_URL}"
             - name: AZURE_OPENAI_ENDPOINT
               # Foundry account inference endpoint (Azure OpenAI-compatible).
               # Set from main.bicep output `accountInferenceEndpoint`.

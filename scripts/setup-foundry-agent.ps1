@@ -20,10 +20,31 @@
     (in which case the deployer is expected to have completed the portal
     steps out-of-band).
 
+    ────────────────────────────────────────────────────────────────────────
+    NOTE: Phase 1 and Phase 4 are now automated upstream.
+    ────────────────────────────────────────────────────────────────────────
+    The orchestrator script `scripts/deploy-all.ps1` (and the underlying
+    `scripts/deploy-k8s.ps1` + `scripts/create-a2a-connection.ps1` and the
+    bicep module `infra/modules/foundry-appinsights-connection.bicep`) now
+    perform what used to be Phase 1's portal-side A2A connection creation
+    and Phase 4's portal-side App Insights linkage, with no human in the
+    loop. When called from `deploy-all.ps1`, this script is invoked with
+    `-SkipManualGates`, the gates short-circuit, and the verification step
+    falls through to the KQL check directly.
+
+    The interactive default (without `-SkipManualGates`) is preserved
+    intentionally so that anyone re-running this script standalone — e.g.
+    to recreate an agent against an existing project that was deployed
+    before the upstream automation was added — can still walk through the
+    legacy manual flow without surprises.
+    ────────────────────────────────────────────────────────────────────────
+
     Citations:
       - plan.md §C Step 16 (Foundry agent provisioning + A2A connection)
       - research/2026-05-20-foundry-control-plane.md §2.3 (Tier 1 traces)
       - research/2026-05-20-foundry-control-plane.md §4.1 (App Insights link)
+      - docs/deployment-learnings.md §3 (A2A connection automation)
+      - docs/deployment-learnings.md §8 (App Insights connection automation)
 
 .PARAMETER FoundryEndpoint
     Foundry project endpoint, e.g.
@@ -87,6 +108,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$AppInsightsName,
 
+    [string]$AppInsightsResourceGroup = '',
+
     [string]$FoundryAgentDir = "apps/foundry-agent",
 
     [switch]$SkipManualGates
@@ -118,8 +141,17 @@ function Write-Banner {
 
 function Invoke-Python {
     <#
-        Runs a python script under the current interpreter, surfaces stderr
-        on non-zero exit, and returns captured stdout as a single string.
+        Runs a python script under the appropriate interpreter:
+        - If the foundry-agent venv exists at apps/foundry-agent/.venv (Windows:
+          .venv/Scripts/python.exe; Linux/macOS: .venv/bin/python) it is used.
+        - Otherwise falls back to system "python".
+        The venv is required on machines whose system Python is 3.14+, because
+        azure-ai-agents/azure-ai-projects depend on pydantic discriminated-union
+        models that hit AttributeError on Python 3.14 (`'typing.Union' object
+        has no attribute '__discriminator__'`). The venv pins Python 3.13.
+
+        Surfaces stderr on non-zero exit and returns captured stdout as a
+        single string.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$ScriptPath,
@@ -131,12 +163,29 @@ function Invoke-Python {
         throw "[$Label] Script not found: $ScriptPath"
     }
 
+    # Resolve venv python relative to the script's parent directory; if the
+    # script is e.g. apps/foundry-agent/test_agent.py, look for
+    # apps/foundry-agent/.venv/Scripts/python.exe (Windows) or
+    # apps/foundry-agent/.venv/bin/python (Linux/macOS).
+    $scriptDir = Split-Path -Parent (Resolve-Path -LiteralPath $ScriptPath)
+    $venvCandidates = @(
+        (Join-Path $scriptDir '.venv\Scripts\python.exe'),
+        (Join-Path $scriptDir '.venv/bin/python')
+    )
+    $pythonExe = 'python'
+    foreach ($cand in $venvCandidates) {
+        if (Test-Path -LiteralPath $cand) {
+            $pythonExe = $cand
+            break
+        }
+    }
+
     $stdoutFile = New-TemporaryFile
     $stderrFile = New-TemporaryFile
 
     try {
         $argList = @($ScriptPath) + $ScriptArgs
-        $proc = Start-Process -FilePath "python" `
+        $proc = Start-Process -FilePath $pythonExe `
             -ArgumentList $argList `
             -NoNewWindow -Wait -PassThru `
             -RedirectStandardOutput $stdoutFile.FullName `
@@ -364,11 +413,40 @@ if ($runKql) {
     Write-Host "Running App Insights KQL fallback diagnostic ..." -ForegroundColor Cyan
     $kqlQuery = "requests | where timestamp > ago(10m) | where customDimensions.gen_ai_agent_name == '$FoundryAgentName' | take 5"
 
+    # Resolve App Insights to its appId GUID so the KQL query works regardless
+    # of the deployer's current az context (subscription / default RG). The
+    # `az monitor app-insights query --apps <name>` form requires either a
+    # matching RG context or the appId GUID. We pick the GUID path because
+    # it's the most robust.
+    $appIdGuid = $null
+    $rgForLookup = $AppInsightsResourceGroup
+    if (-not $rgForLookup) {
+        # Try to discover the RG via resource list (works as long as the
+        # deployer has reader access to the subscription).
+        try {
+            $rgForLookup = (az resource list --resource-type Microsoft.Insights/components --name $AppInsightsName --query "[0].resourceGroup" -o tsv 2>$null)
+        } catch {}
+    }
+    if ($rgForLookup) {
+        try {
+            $appIdGuid = (az monitor app-insights component show --app $AppInsightsName -g $rgForLookup --query appId -o tsv 2>$null)
+        } catch {}
+    }
+
     try {
-        $kqlRaw = az monitor app-insights query `
-            --apps $AppInsightsName `
-            --analytics-query $kqlQuery `
-            --output json 2>&1 | Out-String
+        if ($appIdGuid) {
+            $kqlRaw = az monitor app-insights query `
+                --apps $appIdGuid `
+                --analytics-query $kqlQuery `
+                --output json 2>&1 | Out-String
+        } else {
+            # Fallback: try with the name (will only work if the deployer's
+            # active subscription + a default RG happens to align).
+            $kqlRaw = az monitor app-insights query `
+                --apps $AppInsightsName `
+                --analytics-query $kqlQuery `
+                --output json 2>&1 | Out-String
+        }
 
         if ($LASTEXITCODE -ne 0) {
             throw "az monitor app-insights query exited $LASTEXITCODE. Output: $kqlRaw"

@@ -7,12 +7,24 @@
 > as-shipped scripts and code while bringing the demo up live. All of these
 > corrections are committed to the repository — this doc explains *why* they
 > exist so future operators do not get tripped up by the same gaps.
+>
+> **2026-05-22 update — W1, W2, W3, W4 are now AUTOMATED.** The original
+> manual steps that this document was written to capture have been folded
+> into the shipped scripts; see §10 ("Out-of-the-box single-command deploy")
+> for the new entry point and what each workaround was replaced with.
+> The earlier sections are preserved verbatim as historical context.
 
 Last updated: 2026-05-22
 
 ---
 
 ## 1. Quick demo path — no DNS delegation required
+
+> **Status: AUTOMATED** ✅ — `scripts/deploy-all.ps1` (or `scripts/deploy-k8s.ps1
+> -UseSslipIo:$true`, the default) now performs the sslip.io ingress patching
+> and the `OPS_AGENT_PUBLIC_URL` env override automatically. The manual steps
+> in this section are kept as reference for understanding *why* the automation
+> exists. See §10 for the new flow.
 
 The original [`docs/how-to-demo.md`](./how-to-demo.md) assumes the operator
 owns a public DNS zone (e.g., `zava.example.com`) and can delegate it to
@@ -172,6 +184,12 @@ via the Foundry portal's run-detail view.
 ---
 
 ## 3. A2A connection creation — Foundry SDK gap and the ARM REST workaround
+
+> **Status: AUTOMATED** ✅ — `scripts/create-a2a-connection.ps1` wraps the ARM
+> PUT idempotently (GET → compare target → PUT only if different).
+> `scripts/deploy-k8s.ps1` calls it after the LB IP is known. The PowerShell
+> snippet below remains the source of truth for the API call shape and is
+> what `create-a2a-connection.ps1` implements. See §10.
 
 ### The gap
 
@@ -583,4 +601,289 @@ to a stopped AKS service failed — but the trace itself is intact.)
   runs, the span is still emitted, and the trace shows `success=False`
   with the A2A timeout as the cause. Useful for debugging downstream
   failures.
+
+---
+
+## 9. Clean-room redeploy procedure (avoiding soft-delete collisions)
+
+**Date added: 2026-05-22.** When validating script changes or onboarding a
+new environment, redeploying into the **same** resource group can collide
+with soft-deleted artifacts from a prior tear-down:
+
+- **Key Vault** — `enablePurgeProtection: true` (intentionally — see §7).
+  Deleting the RG soft-deletes the vault; the name is reserved for **90
+  days** and cannot be re-used until purge. Workaround: the vault name
+  uses `uniqueString(resourceGroup().id)` so a different RG name yields a
+  different vault name automatically.
+- **Foundry account** (`Microsoft.CognitiveServices/accounts`) — has a
+  **48-hour soft-delete window**. `infra/main.bicep` hardcodes the
+  `foundryName` parameter to `foundry-zava-a2a-smartorder`, so
+  redeploying into the same RG within 48 hours either silently restores
+  the soft-deleted account (often what you want — connections come back)
+  or fails the deploy if the soft-deleted shape differs. To force a
+  fresh account, pass `-FoundryName <new-name>` to
+  `scripts/deploy-infra.ps1` / `scripts/deploy-all.ps1`.
+- **DNS zone** — Azure DNS has no soft-delete, but the zone name must be
+  globally unique within the operator's tenant. RFC 2606 reserved names
+  (`*.example.com`, `*.invalid`) are safe defaults for non-production.
+- **ACR** — Same as Key Vault: the registry name uses `uniqueString(resourceGroup().id)`
+  so a different RG automatically yields a different ACR name.
+
+### Recommended clean-room procedure
+
+```powershell
+# 1. Tag current good state for rollback safety.
+git tag last-known-good-pre-redeploy
+git push origin last-known-good-pre-redeploy
+
+# 2. Pick a fresh RG + Foundry account name.
+$stamp = Get-Date -Format yyyyMMddHHmm
+$rg = "rg-zava-a2a-validate-$stamp"
+$fa = "foundry-zava-a2a-v$stamp"
+
+# 3. One-command deploy to fresh RG.
+./scripts/deploy-all.ps1 -ResourceGroupName $rg -FoundryName $fa
+
+# 4. Validate the deploy worked: smoke test, KQL traces, manual demo.
+
+# 5. Tear down the validation RG.
+az group delete --name $rg --yes --no-wait
+
+# 6. (Optional) Purge soft-deleted Foundry account to free the name.
+az cognitiveservices account purge -n $fa -l eastus2 -g $rg
+```
+
+The original (working) demo RG stays untouched throughout, so a botched
+validation never blocks the live demo.
+
+---
+
+## 10. Out-of-the-box single-command deploy (W1, W2, W3, W4 automation)
+
+**Date added: 2026-05-22.** Sections 1, 3, and 7 above document the manual
+workarounds that were applied to bring the demo live the first time. The
+shipped scripts now perform all of those steps automatically. This section
+documents the new flow.
+
+### 10.1 The new entry point
+
+```powershell
+./scripts/deploy-all.ps1
+```
+
+On a fresh RG, this runs verify-quota → deploy-infra → build-and-push →
+deploy-k8s (with sslip.io ingress + A2A connection PUT) → setup-foundry-agent
+(`-SkipManualGates`) → smoke-test, with no prompts in between.
+
+### 10.2 What each workaround was replaced with
+
+| # | Workaround (historical) | Replacement |
+|---|---|---|
+| W1 | `kubectl patch ingress` to drop TLS and use sslip host (§1) | `scripts/deploy-k8s.ps1` second pass: re-renders [`apps/ops-agent/k8s/ingress.sslip.yaml`](../apps/ops-agent/k8s/ingress.sslip.yaml) with the real LB IP after polling the ingress |
+| W2 | `kubectl set env OPS_AGENT_PUBLIC_URL` after LB IP is known (§1) | `scripts/deploy-k8s.ps1` runs `kubectl set env deployment/ops-agent OPS_AGENT_PUBLIC_URL=http://<sslip>/` and waits for the pod rollout |
+| W3 | Manual `az rest PUT` to create the A2A connection on Foundry (§3) | [`scripts/create-a2a-connection.ps1`](../scripts/create-a2a-connection.ps1) — GET existing → compare target → PUT only if different. Idempotent. Called automatically by `deploy-k8s.ps1` when the four Foundry params are present |
+| W4 | Manual `az cognitiveservices account deployment update --capacity 200` | `infra/modules/foundry-models.bicep` now defaults capacity to 200 for gpt-5.4-mini (orchestrator + worker). Primary-path gpt-5.5 stays at 50 due to Tier 5 quota |
+| W5 | (Already automated, see §8) Foundry account → App Insights connection | `infra/modules/foundry-appinsights-connection.bicep` deployed by `main.bicep` |
+
+### 10.3 Mode choice (sslip.io vs DnsZone)
+
+`deploy-all.ps1` defaults to `-UseSslipIo:$true`. The sslip.io path is the
+recommended demo path because:
+- No real DNS zone, no NS-record delegation, no TLS certificate workflow.
+- The bicep still provisions an Azure DNS zone resource (it is essentially
+  free at rest, and making it conditional in bicep would complicate the
+  template significantly for negligible benefit).
+
+To deploy with a real DNS zone + TLS:
+
+```powershell
+./scripts/deploy-all.ps1 -UseSslipIo:$false -DnsZoneName <your-zone>
+```
+
+The TLS cert workflow (cert into Key Vault under `tls-cert-ops-agent`)
+still applies in that path; see §4.
+
+### 10.4 What's deliberately *not* automated
+
+- **`az login`** — the deployer must be signed in before running anything.
+- **Cost confirmation** — `deploy-all.ps1` passes `-NonInteractive` to
+  skip the cost-confirmation prompt. This is appropriate for repeat
+  deploys where the deployer already understands the cost.
+- **Tear-down** — destructive, deployer-discretion. The script does not
+  delete anything.
+- **Soft-delete purge** — see §9 for the procedure.
+
+### 10.5 Files added / changed by the automation push
+
+| File | Purpose |
+|---|---|
+| `scripts/deploy-all.ps1` | New orchestrator — chains all five scripts |
+| `scripts/create-a2a-connection.ps1` | New helper — ARM PUT for A2A connection (replaces W3) |
+| `scripts/deploy-k8s.ps1` | `-UseSslipIo` mode + 2-pass ingress + env override + A2A call (replaces W1, W2) |
+| `scripts/deploy-infra.ps1` | `-SkipCertProvisioning` switch + optional `-DnsZoneName` + `-FoundryName` override |
+| `scripts/setup-foundry-agent.ps1` | Doc-only: notes Phase 1/4 are now upstream-automated |
+| `scripts/smoke-test.ps1` | `-OpsAgentEndpoint` parameter (accept full URL) |
+| `infra/modules/foundry-models.bicep` | Capacity 100 → 200 for gpt-5.4-mini (replaces W4) |
+| `apps/ops-agent/k8s/ingress.sslip.yaml` | New sslip-mode ingress template (no TLS, `${SSLIP_HOST}` placeholder) |
+| `apps/ops-agent/k8s/deployment.yaml` | Replaced hardcoded URL with `${OPS_AGENT_PUBLIC_URL}` placeholder |
+
+---
+
+## 11. Azure CLI `az acr build` Unicode crash on Windows — `--no-logs` fix
+
+**Date added: 2026-05-22.** Discovered during clean-room validation of
+`deploy-all.ps1` in §12.
+
+### 11.1 The symptom
+
+`az acr build` on Windows (az CLI 2.83.0 from MSI installer) crashes with:
+
+```
+UnicodeEncodeError: 'charmap' codec can't encode characters in position …
+```
+
+…while streaming ACR build logs. The crash happens because pip's progress
+bars include U+2501 box-drawing characters, the Azure CLI bundles its own
+Python 3.x interpreter, and that bundled Python defaults to `cp1252`
+stdout on Windows.
+
+### 11.2 Why the usual environment fixes don't work
+
+All of the following were tried and did **not** prevent the crash:
+
+- `$env:PYTHONUTF8 = '1'`
+- `$env:PYTHONIOENCODING = 'utf-8'`
+- `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)`
+- `chcp 65001`
+- `$env:NO_COLOR = '1'`
+- `Start-Process … -RedirectStandardOutput`
+
+The bundled Python is launched via `D:\a\_work\1\s\build_scripts\windows\artifacts\cli\Lib\…`
+and **ignores** the environment variables on this code path. The
+crash is in colorama's write to stdout, which happens before any of
+the env vars take effect.
+
+### 11.3 The fix
+
+`az acr build` has a `--no-logs` flag that queues the build, waits for
+it to complete, and **does not stream** the offending build logs.
+[`scripts/build-and-push.ps1`](../scripts/build-and-push.ps1) now uses
+`--no-logs` by default. The build still succeeds; only the live log
+streaming is suppressed.
+
+If a build fails, retrieve the logs with:
+
+```powershell
+az acr task logs --registry <acrName> --run-id <runId>
+```
+
+The run ID is printed by `az acr build` itself.
+
+---
+
+## 12. Single-command deploy validation (clean-room run 2026-05-22)
+
+**Date added: 2026-05-22.** `deploy-all.ps1` was validated against a fresh
+RG (`rg-zava-a2a-validate-202605220835`) to confirm the "out-of-the-box"
+flow. This section captures the residual issues found during validation
+and how they were resolved in code (not workarounds — fixes).
+
+### 12.1 Deployer needs `Foundry User` (data plane), not just `Foundry Account Owner`
+
+**Symptom.** After a clean bicep deploy, `python create_a2a_connection.py
+--verify` reported `Connection 'ops-agent-a2a' NOT FOUND or inaccessible`,
+and a direct data-plane query against the Foundry endpoint returned
+`PermissionDenied — Principal does not have access to API/Operation`
+with the missing data action
+`Microsoft.CognitiveServices/accounts/AIServices/agents/read`.
+
+**Root cause.** The bicep granted the deployer **Foundry Account Owner**
+(control-plane CRUD on the account/projects) but **not** the **Foundry
+User** role, which carries the `Microsoft.CognitiveServices/*` data
+action. The Foundry SDK / portal Agents UI all use the data plane.
+
+**Fix.** `infra/main.bicep` now grants both roles to `deployerPrincipalId`
+at the Foundry account scope:
+
+- `e47c6f54-e4a2-4754-9501-8e0985b135e1` — **Foundry Account Owner**
+  (control plane)
+- `53ca6127-db72-4b80-b1b0-d745d6d5456d` — **Foundry User** (data
+  plane — required for SDK calls and portal Agents UI)
+
+Note: Azure RBAC data-plane changes can take **up to ~30 min** to
+propagate. If you see `PermissionDenied` immediately after a fresh
+deploy, wait and retry.
+
+### 12.2 Python 3.14 breaks the Foundry SDK — use the foundry-agent venv
+
+**Symptom.** Phase 3 of `setup-foundry-agent.ps1` (the `test_agent.py`
+streaming smoke test) crashed with:
+
+```
+AttributeError: 'typing.Union' object has no attribute '__discriminator__'
+```
+
+**Root cause.** `azure-ai-agents` uses pydantic discriminated-union models
+that fail on Python 3.14. The repo's `apps/foundry-agent/pyproject.toml`
+pins `requires-python = ">=3.13"` and the `.venv` was created with
+Python 3.13, but `setup-foundry-agent.ps1` was calling `python` (the
+system interpreter) instead of the venv.
+
+**Fix.** `scripts/setup-foundry-agent.ps1`'s `Invoke-Python` now prefers
+`apps/foundry-agent/.venv/Scripts/python.exe` (Windows) /
+`apps/foundry-agent/.venv/bin/python` (Linux/macOS) when present, and
+falls back to system `python` otherwise. `scripts/deploy-all.ps1` now
+also auto-bootstraps the venv (via `uv sync` if `uv` is installed, else
+`python -m venv .venv` + `pip install -e .`) before invoking
+setup-foundry-agent.
+
+### 12.3 KQL trace-verification diagnostic needs the App Insights RG
+
+**Symptom.** Phase 5 of `setup-foundry-agent.ps1` (the trace-propagation
+KQL probe) failed with:
+
+```
+The Application Insight is not found. Please check the app id again.
+```
+
+**Root cause.** `az monitor app-insights query --apps <name>` requires
+either a matching RG context or the appId GUID. The deployer's active
+`az` context may not align with the App Insights resource group when
+deploying to a custom RG name.
+
+**Fix.** `scripts/setup-foundry-agent.ps1` now accepts an optional
+`-AppInsightsResourceGroup` parameter, falls back to
+`az resource list --resource-type Microsoft.Insights/components` to
+discover the RG, then resolves the appId GUID via `component show`
+and uses the GUID for the KQL query. `deploy-all.ps1` passes the RG
+through automatically.
+
+### 12.4 `deploy-all.ps1` should not abort on a Phase-5 KQL hiccup
+
+**Symptom.** When the KQL probe in setup-foundry-agent's Phase 5
+returned an error (most often because traces had not yet propagated
+into App Insights, which can take 5–10 min), the script's exit code
+was non-zero. `deploy-all.ps1` had a `try/catch` around the call but
+`Invoke-StepOrFail` used `exit 1` internally, which bypassed the
+catch and killed the orchestrator — even though the agent, connection,
+and demo plumbing had all been provisioned correctly.
+
+**Fix.** `Invoke-StepOrFail` now takes a `-ContinueOnFailure` switch.
+When set, it returns `$true`/`$false` instead of calling `exit`.
+`deploy-all.ps1` Step 4 passes the switch so a transient
+trace-verification miss doesn't abort the whole orchestrator.
+
+### 12.5 MCAPS subscription quirks (eastus2)
+
+These are subscription-policy issues, not codebase bugs, but the bicep
+now defaults to values that work on MCAPS:
+
+| Quirk | Default fix |
+|---|---|
+| `gpt-5.5` quota = 0 in MCAPS — `Bicep: InsufficientQuota` on the orchestrator deployment | Set `-UseGpt55:$false`; both agents use `gpt-5.4-mini` (the fallback path is already in `foundry-models.bicep`) |
+| `Standard_D2as_v6` not allowed — `The VM size of Standard_D2as_v6 is not allowed in your subscription in location 'eastus2'` from AKS | `infra/modules/aks.bicep` now defaults to `Standard_D2as_v5` and `scripts/verify-quota.ps1` matches |
+| `az vm list-skus` says `D2as_v5` is `NotAvailableForSubscription` | False positive — AKS preflight allows `D2as_v5` and the deploy succeeds. `verify-quota.ps1` treats this as a warning, not a failure |
+
+
+
 

@@ -1,0 +1,30 @@
+# Ingress for the Ops Agent, sslip.io mode (no TLS, no Key Vault cert).
+#
+# This template is used by scripts/deploy-k8s.ps1 when -UseSslipIo is set
+# (the default). The ${SSLIP_HOST} placeholder is computed at deploy time
+# as `ops-agent.<lb-ip-dashed>.sslip.io` once the ingress LB IP is known.
+#
+# Why no TLS?
+#   The sslip.io path is intentionally HTTP-only for the demo. Foundry's
+#   A2A tool accepts plain HTTP endpoints (the A2A protocol allows it for
+#   non-production). For a polished demo behind HTTPS, use the DnsZone
+#   path (apps/ops-agent/k8s/ingress.yaml) with a real Key Vault cert.
+#   See docs/deployment-learnings.md §4 for the TLS-on-sslip path.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ops-agent-ingress
+  namespace: default
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  rules:
+    - host: "${SSLIP_HOST}"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ops-agent-svc
+                port:
+                  number: 9000

@@ -80,6 +80,27 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # -----------------------------------------------------------------------------
+# Force UTF-8 I/O so `az acr build` can stream build logs containing non-ASCII
+# characters (e.g. pip's box-drawing progress bars U+2501) without crashing on
+# the default Windows cp1252 stdout encoding. PYTHONUTF8=1 enables Python's
+# "UTF-8 mode" globally inside the Python child process the Azure CLI runs as,
+# which overrides the cp1252 locale that colorama otherwise inherits.
+# Without these env vars the `az acr build` call can fail with a
+# UnicodeEncodeError mid-stream even though the actual image build inside ACR
+# succeeded. See docs/deployment-learnings.md §11.
+# -----------------------------------------------------------------------------
+$env:PYTHONUTF8        = '1'
+$env:PYTHONIOENCODING  = 'utf-8'
+try {
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    [Console]::InputEncoding  = [System.Text.UTF8Encoding]::new($false)
+    $OutputEncoding           = [System.Text.UTF8Encoding]::new($false)
+} catch {
+    # On older PowerShell hosts setting console encoding can throw; the
+    # PYTHONUTF8/PYTHONIOENCODING env vars alone are usually sufficient.
+}
+
+# -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 function Write-Section {
@@ -190,8 +211,17 @@ $buildArgs = @(
     '--registry', $AcrName,
     '--image', ("ops-agent:{0}" -f $ImageTag),
     '--file', $dockerfileAbs,
+    '--no-logs',
     $contextAbs
 )
+# --no-logs: Queue + wait for the build, but do not stream the log lines back
+# to PowerShell. This avoids a Windows-only Azure CLI crash where pip's
+# Unicode box-drawing progress bars (U+2501) inside the ACR build log can't
+# be encoded to cp1252 by the bundled Python's stdout, killing the CLI
+# mid-stream even though the actual image build succeeded.
+# See docs/deployment-learnings.md §11.
+# On build failure, retrieve full logs with:
+#   az acr task logs --registry <acrName> --run-id <runId>
 Invoke-AzOrFail -Description 'az acr build' -AzArgs $buildArgs | Out-Host
 Write-Host "✓ Build completed." -ForegroundColor Green
 

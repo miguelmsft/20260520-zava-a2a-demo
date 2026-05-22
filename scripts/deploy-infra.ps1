@@ -39,9 +39,14 @@
     gpt-5.4-mini-only fallback when gpt-5.5 quota is unavailable.
 
 .PARAMETER DnsZoneName
-    REQUIRED. Public DNS zone for the demo (e.g., zava-demo.example.com). Must
-    be a domain you control; NS records printed at the end must be added at the
-    parent domain registrar to complete delegation.
+    Optional. Public DNS zone for the demo (e.g., zava-demo.example.com). Required
+    only when terminating TLS at the AKS ingress (the non-sslip.io demo path).
+    Default: `zava-a2a-demo.example.com` — RFC 2606 reserved, intentionally
+    unused in the default sslip.io flow but the bicep still provisions the
+    Azure DNS zone resource (it is essentially free at rest and the cleanest
+    way to avoid making the entire DNS zone subtree conditional in bicep).
+    For a real TLS-terminated demo, pass a domain you control; NS records
+    printed at the end must be added at the parent domain registrar.
 
 .PARAMETER DeployerPrincipalId
     Optional. Azure AD object ID of the principal that should receive Foundry
@@ -86,8 +91,8 @@ param(
     [Parameter(Mandatory = $false)]
     [switch] $UseGpt55 = $true,
 
-    [Parameter(Mandatory = $true)]
-    [string] $DnsZoneName,
+    [Parameter(Mandatory = $false)]
+    [string] $DnsZoneName = 'zava-a2a-demo.example.com',
 
     [Parameter(Mandatory = $false)]
     [string] $DeployerPrincipalId,
@@ -102,7 +107,13 @@ param(
     [System.Security.SecureString] $CertificatePfxPassword,
 
     [Parameter(Mandatory = $false)]
-    [switch] $NonInteractive
+    [switch] $NonInteractive,
+
+    [Parameter(Mandatory = $false)]
+    [switch] $SkipCertProvisioning,
+
+    [Parameter(Mandatory = $false)]
+    [string] $FoundryName
 )
 
 $ErrorActionPreference = 'Stop'
@@ -211,7 +222,7 @@ $useGpt55Value = if ([bool]$UseGpt55) { 'true' } else { 'false' }
 $deploymentName = "zava-infra-{0}" -f ([DateTime]::UtcNow.ToString('yyyyMMddHHmmss'))
 
 Write-Host "Deployment name: $deploymentName"
-$deployOutputJson = Invoke-AzOrFail -Description 'az deployment group create' -Args @(
+$deploymentArgs = @(
     'deployment','group','create',
     '--resource-group', $ResourceGroupName,
     '--name', $deploymentName,
@@ -222,6 +233,13 @@ $deployOutputJson = Invoke-AzOrFail -Description 'az deployment group create' -A
     '--parameters', ("deployerPrincipalId=$DeployerPrincipalId"),
     '--output','json'
 )
+# Allow caller to override the (otherwise-hardcoded) Foundry account name so
+# clean-room redeploys can avoid colliding with a soft-deleted account.
+if (-not [string]::IsNullOrWhiteSpace($FoundryName)) {
+    $deploymentArgs += @('--parameters', ("foundryName=$FoundryName"))
+    Write-Host ("  Foundry account name overridden: {0}" -f $FoundryName) -ForegroundColor Yellow
+}
+$deployOutputJson = Invoke-AzOrFail -Description 'az deployment group create' -Args $deploymentArgs
 
 try {
     $deployment = ($deployOutputJson | Out-String) | ConvertFrom-Json
@@ -289,6 +307,13 @@ Write-Host "✓ kubectl context set to $aksClusterName." -ForegroundColor Green
 # -----------------------------------------------------------------------------
 # 7. TLS certificate provisioning
 # -----------------------------------------------------------------------------
+if ($SkipCertProvisioning) {
+    Write-Section 'TLS certificate — SKIPPED (-SkipCertProvisioning)'
+    Write-Host 'No TLS certificate will be imported or verified. This is the right'
+    Write-Host 'choice for the default sslip.io / HTTP demo path (see'
+    Write-Host 'docs/deployment-learnings.md §1). For HTTPS deploys, re-run without'
+    Write-Host '-SkipCertProvisioning and provide -CertificatePfxPath.'
+} else {
 Write-Section 'TLS certificate (Key Vault: tls-cert-ops-agent)'
 
 $certHost = "ops-agent.$dnsZoneNameOut"
@@ -410,6 +435,8 @@ if ($daysToExpiry -lt 30) {
     exit 1
 }
 Write-Host ("✓ Certificate valid; enabled=true; expires {0:yyyy-MM-dd} ({1:N0} days)." -f $expires, $daysToExpiry) -ForegroundColor Green
+}
+# end if (-not $SkipCertProvisioning)
 
 # -----------------------------------------------------------------------------
 # 8. Summary + next steps

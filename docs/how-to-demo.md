@@ -86,6 +86,16 @@ See [`docs/architecture.md`](./architecture.md) (“Cost model” section) for t
 
 > Everything in this section is done **once per environment**. After you finish 4.6, you do not need to re-run it unless you tear down the resource group.
 
+> **⚡ Want the fastest path?** If you do not own a DNS zone and just want the demo to work end-to-end, skip sections 4.3 – 4.5 and use the single-command flow:
+>
+> ```powershell
+> az login
+> az account set --subscription "<subscription-id>"
+> ./scripts/deploy-all.ps1                      # uses sslip.io — no DNS / TLS work needed
+> ```
+>
+> `deploy-all.ps1` chains verify-quota → deploy-infra → build-and-push → deploy-k8s (sslip.io ingress, no TLS) → setup-foundry-agent → smoke-test, in roughly 30 – 45 minutes, with no manual gates between steps. Once it returns green, jump straight to **section 5** to start the local UI. The granular sections below are kept for the DNS+TLS path and for operators who want to understand each step.
+
 ### 4.1 Clone and authenticate
 
 ```powershell

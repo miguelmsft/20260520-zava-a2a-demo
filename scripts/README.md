@@ -6,10 +6,31 @@ Azure. These scripts are the **canonical deployment path**; `azd up` against
 post-deployment steps (quota pre-flight, TLS cert import, AKS credential fetch,
 Foundry portal pauses) that the scripts handle.
 
-## Execution order
+## Single-command path (recommended)
 
-Run the scripts strictly in this order. Each step depends on outputs from the
-previous step.
+For a full clean-room deploy, use the orchestrator:
+
+```powershell
+./scripts/deploy-all.ps1                              # uses sslip.io (no DNS needed)
+./scripts/deploy-all.ps1 -UseSslipIo:$false `         # real DNS + TLS path
+                         -DnsZoneName zava.example.com
+```
+
+`deploy-all.ps1` chains `verify-quota.ps1` → `deploy-infra.ps1` →
+`build-and-push.ps1` → `deploy-k8s.ps1` → `setup-foundry-agent.ps1` →
+`smoke-test.ps1` with no manual gates and writes a transcript to
+`artifacts/deploy-all-<timestamp>.log`. It automates the four manual
+workarounds documented in `docs/deployment-learnings.md` §10:
+
+- W1: sslip.io ingress (no TLS) — automatic via `deploy-k8s.ps1 -UseSslipIo`
+- W2: `OPS_AGENT_PUBLIC_URL` set after LB IP is known — automatic
+- W3: A2A connection ARM PUT — `create-a2a-connection.ps1`, called inline
+- W4: model deployment capacity 100 → 200 — now the bicep default
+
+## Execution order (granular path)
+
+Run the scripts strictly in this order if you prefer not to use
+`deploy-all.ps1`. Each step depends on outputs from the previous step.
 
 1. **`verify-quota.ps1`** — Read-only Azure check. Confirms gpt-5.5 and/or
    gpt-5.4-mini Global Standard quota in the target region and that
@@ -18,14 +39,31 @@ previous step.
 2. **`deploy-infra.ps1`** — Creates the resource group and runs
    `infra/main.bicep`. Configures `kubectl` against the new AKS cluster and
    handles the TLS certificate provisioning into Key Vault (`tls-cert-ops-agent`).
-3. **`deploy-k8s.ps1`** *(Step 15)* — Builds and pushes the `ops-agent`
-   container image to ACR, generates the A2A API key, creates the K8s secret,
-   and applies the Deployment/Service/Ingress manifests under
-   `apps/ops-agent/k8s/`.
-4. **`setup-foundry-agent.ps1`** *(Step 16)* — Creates the Foundry A2A
-   connection (portal + SDK fallback), provisions the Foundry Customer Service
-   Agent, runs end-to-end tests, and walks the deployer through the App
-   Insights → Foundry tracing link.
+   Accepts `-SkipCertProvisioning` for the sslip.io path and `-FoundryName`
+   to override the Foundry account name (for fresh redeploys — see
+   `docs/deployment-learnings.md` §9).
+3. **`build-and-push.ps1`** — Builds and pushes the `ops-agent` container
+   image to ACR via `az acr build`.
+4. **`deploy-k8s.ps1`** — Applies the Deployment/Service/Ingress manifests
+   under `apps/ops-agent/k8s/`. With `-UseSslipIo` (default `$true`), uses
+   `ingress.sslip.yaml` (no TLS) and renders the host using the LB IP after
+   the service is up. With `-UseSslipIo:$false`, uses `ingress.yaml` (TLS via
+   `tls-cert-ops-agent`). When passed `-SubscriptionId`, `-ResourceGroupName`,
+   `-FoundryAccountName`, `-ProjectName`, also calls
+   `create-a2a-connection.ps1` automatically.
+5. **`create-a2a-connection.ps1`** — Idempotent ARM PUT to create / update
+   the A2A connection on the Foundry account. GET → compare target → PUT
+   only if different (or `-Force` to rotate the key). Called inline by
+   `deploy-k8s.ps1`; can also be run standalone if you need to repoint the
+   connection to a different ops-agent URL.
+6. **`setup-foundry-agent.ps1`** — Provisions the Foundry Customer Service
+   Agent, runs end-to-end tests, and (when called with `-SkipManualGates`)
+   skips the portal pauses for the A2A connection and App Insights links
+   because both are now automated upstream by `create-a2a-connection.ps1`
+   and `infra/modules/foundry-appinsights-connection.bicep`.
+7. **`smoke-test.ps1`** — End-to-end probe. Accepts `-OpsAgentEndpoint` (full
+   URL with scheme, including `http://...sslip.io/`) or derives the URL
+   from `-DnsZone`.
 
 ## Prerequisites
 

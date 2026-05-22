@@ -114,7 +114,13 @@ Full step-by-step instructions live in **[`docs/how-to-demo.md`](docs/how-to-dem
 
 ### Quickstart
 
-The five deployment scripts are designed to be run in order. Each is idempotent.
+The recommended path uses **`scripts/deploy-all.ps1`** — a single command that
+chains all five legacy scripts (`verify-quota` → `deploy-infra` →
+`build-and-push` → `deploy-k8s` → `setup-foundry-agent` → `smoke-test`) and
+performs every previously-manual step automatically (TLS-free sslip.io
+ingress, `OPS_AGENT_PUBLIC_URL` env override, A2A connection PUT, App
+Insights → Foundry linkage). On a fresh resource group it takes
+**~30-60 minutes** end-to-end and requires **zero portal clicks**.
 
 ```powershell
 # 0. Clone, sign in, pick a subscription
@@ -123,23 +129,32 @@ cd 20260520-zava-a2a-demo
 az login
 az account set --subscription "<subscription-id>"
 
-# 1. Detect available model quota (auto-selects gpt-5.5 vs gpt-5.4-mini)
-./scripts/verify-quota.ps1
-
-# 2. Deploy Bicep: Foundry, AKS, ACR, Key Vault, App Insights, UAMI
-./scripts/deploy-infra.ps1 -DnsZoneName zava.example.com -CertificatePfxPath ./ops-agent.pfx
-
-# 3. Build & push the Ops Agent image to ACR (uses az acr build by default)
-./scripts/build-and-push.ps1
-
-# 4. Deploy the Ops Agent to AKS (Workload Identity, Ingress, A2A API key)
-./scripts/deploy-k8s.ps1
-
-# 5. Create the Foundry V2 Customer Service Agent and wire the A2A connection
-./scripts/setup-foundry-agent.ps1
+# 1. One command — deploy infra + image + AKS + Foundry agent + smoke
+./scripts/deploy-all.ps1
 ```
 
-> **Note (Foundry V2 GA quirks):** the A2A connection is created automatically by step 5 via ARM REST PUT (data-plane SDK gap — see [`docs/deployment-learnings.md`](docs/deployment-learnings.md) §3). The Customer Service Agent's `responses.create` requires `model=<deployment name>` (`FOUNDRY_ORCHESTRATOR_DEPLOYMENT` env var, default `gpt-55-orchestrator`) and is incompatible with the older `api-version` query parameter — both are handled automatically by the shipped code.
+That's it. By default this deploys to `rg-zava-a2a-smart-order-demo` in
+`eastus2` with `gpt-5.5` (primary) + `gpt-5.4-mini` (worker), using
+**sslip.io DNS over HTTP** (no real DNS zone or TLS certificate needed).
+
+To deploy with HTTPS behind a real DNS zone instead:
+
+```powershell
+./scripts/deploy-all.ps1 -UseSslipIo:$false -DnsZoneName zava.example.com
+```
+
+If you prefer the granular flow, the five underlying scripts are still
+runnable individually and are also idempotent:
+
+```powershell
+./scripts/verify-quota.ps1
+./scripts/deploy-infra.ps1 -SkipCertProvisioning   # sslip mode
+./scripts/build-and-push.ps1 -AcrLoginServer <...>
+./scripts/deploy-k8s.ps1 -AcrLoginServer <...> -UamiClientId <...> -FoundryEndpoint <...> -WorkerDeploymentName <...> `
+    -SubscriptionId <...> -ResourceGroupName <...> -FoundryAccountName <...> -ProjectName <...>
+./scripts/setup-foundry-agent.ps1 -SkipManualGates `
+    -FoundryEndpoint <...> -OpsAgentEndpoint <...> -OpsAgentApiKey <...> -AppInsightsName <...>
+```
 
 Then start the local apps in two terminals:
 

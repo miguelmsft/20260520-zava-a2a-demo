@@ -11,18 +11,22 @@
 // Branching semantics (R1 fallback — see plan.md §C Step 4 / §F):
 //   - useGpt55 = true  (PRIMARY):
 //       Orchestrator -> gpt-5.5       (2026-04-24, GlobalStandard, capacity 50)
-//       Worker       -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 100)
+//       Worker       -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 200)
 //   - useGpt55 = false (FALLBACK):
-//       Orchestrator -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 100)
-//       Worker       -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 100)
+//       Orchestrator -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 200)
+//       Worker       -> gpt-5.4-mini  (2026-03-17, GlobalStandard, capacity 200)
 //
 // Capacity sizing notes:
 //   - Code Interpreter + A2A workflows burn through TPM very quickly because
 //     each tool round-trip adds reasoning tokens. With capacity=10 (1K TPM)
-//     a single feasibility query hits a 429 mid-stream. capacity=100 (=100K
+//     a single feasibility query hits a 429 mid-stream. capacity=200 (=200K
 //     TPM for gpt-5.4-mini GlobalStandard) gives enough headroom for the
 //     demo without exhausting subscription quota (default limit is 1000
-//     units in eastus2).
+//     units in eastus2). Prior default of 100 was too tight — observed
+//     occasional 429s under bursty A2A traffic; live state was manually
+//     bumped to 200 (see docs/deployment-learnings.md §8 follow-up).
+//   - gpt-5.5 stays at capacity 50 in the primary path because Tier 5+
+//     accounts often only get 50 units of gpt-5.5 quota in eastus2.
 //
 // In BOTH branches the module emits two distinct deployments with different
 // names so the demo's "different deployment per agent" property is preserved.
@@ -63,7 +67,7 @@ var gpt54MiniModelVersion = '2026-03-17'
 // Resolved orchestrator model parameters (branch on useGpt55).
 var orchestratorModelName = useGpt55 ? gpt55ModelName : gpt54MiniModelName
 var orchestratorModelVersion = useGpt55 ? gpt55ModelVersion : gpt54MiniModelVersion
-var orchestratorCapacity = useGpt55 ? 50 : 100
+var orchestratorCapacity = useGpt55 ? 50 : 200
 
 // -----------------------------------------------------------------------------
 // Existing parent — Foundry account
@@ -102,7 +106,7 @@ resource workerDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026
   name: workerDeploymentName
   sku: {
     name: 'GlobalStandard'
-    capacity: 100
+    capacity: 200
   }
   properties: {
     model: {

@@ -93,6 +93,9 @@ param(
     [string] $OpsAgentSubdomain = 'ops-agent',
 
     [Parameter(Mandatory = $false)]
+    [string] $OpsAgentEndpoint,
+
+    [Parameter(Mandatory = $false)]
     [string] $BackendUrl = 'http://localhost:8000',
 
     [Parameter(Mandatory = $false)]
@@ -237,7 +240,15 @@ function Invoke-Probe {
 # Cluster checks
 # ---------------------------------------------------------------------------
 
-$opsAgentBase = "https://${OpsAgentSubdomain}.${DnsZone}"
+if (-not [string]::IsNullOrWhiteSpace($OpsAgentEndpoint)) {
+    # Caller-supplied full URL (with scheme). This is the path the orchestrator
+    # `scripts/deploy-all.ps1` uses so http://ops-agent.<sslip>.sslip.io/ flows
+    # through unchanged. Strip any trailing slash so we can append /health etc.
+    $opsAgentBase = $OpsAgentEndpoint.TrimEnd('/')
+} else {
+    # Legacy / DnsZone+HTTPS path.
+    $opsAgentBase = "https://${OpsAgentSubdomain}.${DnsZone}"
+}
 
 function Test-OpsAgentHealth {
     $name = "AKS ops-agent /health ($opsAgentBase/health)"
