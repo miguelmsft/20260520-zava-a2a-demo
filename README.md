@@ -15,12 +15,31 @@
 
 ## Table of Contents
 
-1. [Use Case](#use-case)
-2. [Technology](#technology)
-3. [How to Run the Demo](#how-to-run-the-demo)
-4. [Repository Layout](#repository-layout)
-5. [Documentation](#documentation)
-6. [License & Disclaimers](#license--disclaimers)
+1. [Demo Preview](#demo-preview)
+2. [Use Case](#use-case)
+3. [Technology](#technology)
+4. [How to Run the Demo](#how-to-run-the-demo)
+5. [Repository Layout](#repository-layout)
+6. [Documentation](#documentation)
+7. [License & Disclaimers](#license--disclaimers)
+
+---
+
+## Demo Preview
+
+The React UI surfaces the **two-agent A2A collaboration** as it happens. Two views give a complete picture of the workflow:
+
+### 1. Agent Conversation — the A2A round-trip in plain English
+
+After the user submits the order form on the left, the **Foundry Customer Service Agent** delegates to the **LangGraph Ops Agent** over A2A and produces a feasibility verdict. The bottom pane's *Agent Conversation* tab shows the actual A2A messages exchanged between the two agents, with sender → receiver labels and a *Show raw JSON* toggle that exposes the full A2A envelope.
+
+![Smart Order Feasibility — Agent Conversation view](Screenshots/Screenshot1.png)
+
+### 2. Code Interpreter chart + Activity Timeline — every event, every hop
+
+The Foundry agent then calls **Code Interpreter** to render a three-panel feasibility chart (quantity vs. fulfillable supply, date timeline, feasibility score). The *Activity Timeline* tab captures every internal event — Foundry status updates, tool calls, code-interpreter deltas, A2A hop markers, and completion — so technical reviewers can see exactly how the two agents collaborated.
+
+![Smart Order Feasibility — Code Interpreter chart + Activity Timeline](Screenshots/Screenshot2.png)
 
 ---
 
