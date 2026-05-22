@@ -230,11 +230,12 @@ All documentation lives in [`docs/`](docs/):
 
 - **[`docs/use-case.md`](docs/use-case.md)** — Zava company profile, business problem, personas, data model, full interaction walkthrough.
 - **[`docs/technology.md`](docs/technology.md)** — Detailed component stack, SDK selection rationale, code patterns, observability, model strategy.
-- **[`docs/a2a-implementation.md`](docs/a2a-implementation.md)** — Wire-level A2A: protocol version, Agent Card, JSON-RPC `message/send`, dual-part artifact pattern, auth, error handling.
+- **[`docs/a2a-foundry-walkthrough.md`](docs/a2a-foundry-walkthrough.md)** — **Start here for A2A**: a beginner-friendly, copy-paste walkthrough of how to implement A2A in a Foundry V2 agent, grounded in this repo's actual code.
+- **[`docs/a2a-implementation.md`](docs/a2a-implementation.md)** — Wire-level A2A reference: protocol version, Agent Card, JSON-RPC `message/send`, dual-part artifact pattern, auth, error handling.
 - **[`docs/architecture.md`](docs/architecture.md)** — Azure resource inventory, RBAC matrix, network flow, K8s objects, failure modes, cost envelope, scaling vectors.
 - **[`docs/private-vnet-considerations.md`](docs/private-vnet-considerations.md)** — What it would take to run this on a private VNet: what Foundry V2 + A2A supports today, gaps, and a hardened-architecture sketch.
 - **[`docs/how-to-demo.md`](docs/how-to-demo.md)** — Full presenter / customer demo runbook with prerequisites, deploy steps, demo script, and cleanup.
-- **[`docs/deployment-learnings.md`](docs/deployment-learnings.md)** — **NEW**: As-deployed notes from a successful end-to-end run, including Foundry V2 GA quirks (`api-version` rejection, `agent_reference.type`, model-binding rules), the ARM REST workaround for A2A connections, and the sslip.io / HTTP demo path.
+- **[`docs/deployment-learnings.md`](docs/deployment-learnings.md)** — As-deployed notes from a successful end-to-end run, including Foundry V2 GA quirks (`api-version` rejection, `agent_reference.type`, model-binding rules), the ARM REST workaround for A2A connections, and the sslip.io / HTTP demo path.
 
 For working context and design decisions, see [`plan.md`](plan.md) (the full implementation plan) and [`.github/copilot-instructions.md`](.github/copilot-instructions.md) (project specification).
 

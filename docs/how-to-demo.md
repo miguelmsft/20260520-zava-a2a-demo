@@ -211,14 +211,20 @@ For the security model behind the `x-api-key` mitigation (R17), see [`docs/a2a-i
 
 ### 5.1 Backend
 
+The backend uses `uv` for dependency management (a `pyproject.toml` + `uv.lock`, no `requirements.txt`).
+
 ```powershell
 cd apps/backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+uv sync                                # creates .venv/ and installs deps (first run only)
 $env:FOUNDRY_PROJECT_ENDPOINT = "<foundryProjectEndpoint from 4.3>"
 $env:FOUNDRY_AGENT_NAME = "zava-customer-service"
-uvicorn app.main:app --port 8000
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+If you don't have `uv`, install it once via `pip install uv` (or `winget install astral-sh.uv`). Alternatively, you can use the venv directly:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Verify in another terminal:
@@ -227,7 +233,7 @@ Verify in another terminal:
 curl http://localhost:8000/api/health
 ```
 
-Expect: `{"status":"ok","foundry":"reachable","agent":"zava-customer-service"}`.
+Expect: `{"status":"ok","agent_name":"zava-customer-service"}`.
 
 The backend uses `DefaultAzureCredential`, so make sure you’re still logged in (`az account show`). If you switched tenants since 4.1, re-run `az login`.
 
@@ -299,6 +305,7 @@ Reference: [`docs/architecture.md`](./architecture.md) for the deployed componen
 | `invalid_payload: Model must match the agent's model 'gpt-55-orchestrator'` | `responses.create(model=...)` was passed the agent name instead of the bound deployment | Set `FOUNDRY_ORCHESTRATOR_DEPLOYMENT=gpt-55-orchestrator` (or whatever the deployment is called). See [`docs/deployment-learnings.md`](./deployment-learnings.md) §2.3. |
 | `invalid_payload: required: Required properties ["type"] are not present` on `/agent_reference` | GA requires `type: "agent_reference"` alongside `name` | Update your call site; the shipped backend and `test_agent.py` already include it. |
 | AKS health probes/ingress unreachable after a day idle | AKS auto-stopped | `az aks start --name aks-zava-a2a-smart-order --resource-group rg-zava-a2a-smart-order-demo` then `kubectl rollout restart deployment/ops-agent`. See [`docs/deployment-learnings.md`](./deployment-learnings.md) §5.5. |
+| `az aks start` returns `SkuNotAvailable: Standard_D2as_v6` and the node pool is in Failed state | Azure has a transient capacity restriction on `D2as_v6` in your region (commonly seen in MCAPS subscriptions in `eastus2`) | Don't tear down the cluster. Add a new system pool on a different SKU and delete the failed one — the ingress IP is preserved: `az aks nodepool add -g rg-zava-a2a-smart-order-demo --cluster-name aks-zava-a2a-smart-order --name sysv5 --node-count 2 --node-vm-size Standard_D2as_v5 --mode System` then `az aks nodepool delete -g rg-zava-a2a-smart-order-demo --cluster-name aks-zava-a2a-smart-order --name system`. The shipped Bicep already defaults to `Standard_D2as_v5` so future clean deploys avoid this. |
 | `429 Too Many Requests` during a second demo run | Default 10K TPM is too low for repeated runs | Scale both deployments to capacity 50 via `az cognitiveservices account deployment create --sku-capacity 50` (idempotent upsert). See [`docs/deployment-learnings.md`](./deployment-learnings.md) §5.4. |
 | `AttributeError: 'ConnectionsOperations' object has no attribute 'create'` | Data-plane SDK gap; `connections.create` does not exist | Use ARM REST PUT instead — `create_a2a_connection.py` now does this automatically. See [`docs/deployment-learnings.md`](./deployment-learnings.md) §3. |
 
@@ -333,7 +340,8 @@ If your test_agent.py runs left orphan agents or A2A connections you want gone b
 - [`docs/use-case.md`](./use-case.md) — the Zava Smart Order Feasibility scenario and business value.
 - [`docs/architecture.md`](./architecture.md) — the deployed Azure components, identity model, and cost breakdown.
 - [`docs/technology.md`](./technology.md) — the implementation details (Foundry V2 + LangGraph + React + FastAPI).
+- [`docs/a2a-foundry-walkthrough.md`](./a2a-foundry-walkthrough.md) — beginner-friendly, copy-paste walkthrough of A2A in a Foundry V2 agent.
 - [`docs/a2a-implementation.md`](./a2a-implementation.md) — A2A protocol deep-dive: wire format, auth, dual-part artifact pattern, version interop.
 - [`docs/private-vnet-considerations.md`](./private-vnet-considerations.md) — guidance for hardened / private-VNet deployments.
-- [`docs/deployment-learnings.md`](./deployment-learnings.md) — **NEW**: As-deployed notes and GA-specific workarounds from a successful end-to-end run.
+- [`docs/deployment-learnings.md`](./deployment-learnings.md) — As-deployed notes and GA-specific workarounds from a successful end-to-end run.
 - [`plan.md`](../plan.md) §F.1 — gating risks (DNS delegation, TLS cert, gpt-5.5 quota).
